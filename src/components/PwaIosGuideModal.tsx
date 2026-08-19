@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Share, PlusSquare, ArrowUp, Smartphone, Download, CheckCircle2 } from 'lucide-react';
+import { X, Share, PlusSquare, Download, CheckCircle2 } from 'lucide-react';
 
 interface PwaIosGuideModalProps {
   isOpen: boolean;
@@ -15,6 +15,28 @@ export const PwaIosGuideModal: React.FC<PwaIosGuideModalProps> = ({
   isIos
 }) => {
   if (!isOpen) return null;
+
+  const handleInstallClick = async () => {
+    const pwaPrompt = (window as any).deferredPwaPrompt;
+
+    if (pwaPrompt && typeof pwaPrompt.prompt === 'function') {
+      try {
+        await pwaPrompt.prompt();
+        const choice = await pwaPrompt.userChoice;
+        if (choice?.outcome === 'accepted') {
+          // Successfully installed
+        }
+        (window as any).deferredPwaPrompt = null;
+        onClose();
+      } catch (err) {
+        console.warn(err);
+        onClose();
+      }
+    } else {
+      // Native prompt available nahi hai
+      onClose();
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
@@ -43,43 +65,35 @@ export const PwaIosGuideModal: React.FC<PwaIosGuideModalProps> = ({
         {isIos ? (
           <div className="space-y-3">
             <p className="text-xs text-gray-300">
-              Follow these simple steps in Safari to add MVP ESPORTS to your Home Screen:
+              Safari mein yeh steps follow karo:
             </p>
 
             <div className="space-y-2 text-xs">
               <div className="p-2.5 rounded-xl bg-[#07192e] border border-gray-800 flex items-center gap-3">
-                <div className="w-7 h-7 rounded-lg bg-[#00e5ff]/20 text-[#00e5ff] flex items-center justify-center shrink-0 font-black">
-                  1
-                </div>
+                <div className="w-7 h-7 rounded-lg bg-[#00e5ff]/20 text-[#00e5ff] flex items-center justify-center shrink-0 font-black">1</div>
                 <div className="flex-1">
                   <p className="font-bold text-white flex items-center gap-1.5">
-                    Tap the Share icon <Share className="w-3.5 h-3.5 text-[#00e5ff]" />
+                    Share icon pe tap karo <Share className="w-3.5 h-3.5 text-[#00e5ff]" />
                   </p>
-                  <p className="text-[10px] text-gray-400">Located at the bottom or top of Safari browser</p>
+                  <p className="text-[10px] text-gray-400">Safari ke bottom ya top mein hota hai</p>
                 </div>
               </div>
 
               <div className="p-2.5 rounded-xl bg-[#07192e] border border-gray-800 flex items-center gap-3">
-                <div className="w-7 h-7 rounded-lg bg-[#00e5ff]/20 text-[#00e5ff] flex items-center justify-center shrink-0 font-black">
-                  2
-                </div>
+                <div className="w-7 h-7 rounded-lg bg-[#00e5ff]/20 text-[#00e5ff] flex items-center justify-center shrink-0 font-black">2</div>
                 <div className="flex-1">
                   <p className="font-bold text-white flex items-center gap-1.5">
-                    Select "Add to Home Screen" <PlusSquare className="w-3.5 h-3.5 text-emerald-400" />
+                    "Add to Home Screen" select karo <PlusSquare className="w-3.5 h-3.5 text-emerald-400" />
                   </p>
-                  <p className="text-[10px] text-gray-400">Scroll down the share list options</p>
                 </div>
               </div>
 
               <div className="p-2.5 rounded-xl bg-[#07192e] border border-gray-800 flex items-center gap-3">
-                <div className="w-7 h-7 rounded-lg bg-[#00e5ff]/20 text-[#00e5ff] flex items-center justify-center shrink-0 font-black">
-                  3
-                </div>
+                <div className="w-7 h-7 rounded-lg bg-[#00e5ff]/20 text-[#00e5ff] flex items-center justify-center shrink-0 font-black">3</div>
                 <div className="flex-1">
                   <p className="font-bold text-white flex items-center gap-1.5">
-                    Tap "Add" <CheckCircle2 className="w-3.5 h-3.5 text-[#00e5ff]" />
+                    "Add" pe tap karo <CheckCircle2 className="w-3.5 h-3.5 text-[#00e5ff]" />
                   </p>
-                  <p className="text-[10px] text-gray-400">Top right corner to confirm installation</p>
                 </div>
               </div>
             </div>
@@ -87,12 +101,20 @@ export const PwaIosGuideModal: React.FC<PwaIosGuideModalProps> = ({
         ) : (
           <div className="space-y-3">
             <p className="text-xs text-gray-300">
-              To install MVP ESPORTS on your device:
+              Android pe install karne ke liye:
             </p>
             <div className="p-3 rounded-xl bg-[#07192e] border border-gray-800 space-y-1.5 text-xs">
-              <p className="font-bold text-white">Browser App Menu</p>
+              <p className="font-bold text-white">Method 1 (Recommended)</p>
               <p className="text-[10px] text-gray-400">
-                Open your browser options (3 dots menu) and tap <span className="text-[#00e5ff] font-bold">"Install App"</span> or <span className="text-[#00e5ff] font-bold">"Add to Home screen"</span>.
+                Neeche <span className="text-[#00e5ff] font-bold">INSTALL NOW</span> button dabao. 
+                Agar Chrome ka popup aaye to <span className="text-[#00e5ff] font-bold">Install</span> pe click karo.
+              </p>
+            </div>
+            <div className="p-3 rounded-xl bg-[#07192e] border border-gray-800 space-y-1.5 text-xs">
+              <p className="font-bold text-white">Method 2</p>
+              <p className="text-[10px] text-gray-400">
+                Browser ke <span className="text-[#00e5ff] font-bold">3 dots (⋮)</span> pe jao → 
+                <span className="text-[#00e5ff] font-bold">Install app</span> ya <span className="text-[#00e5ff] font-bold">Add to Home screen</span> select karo.
               </p>
             </div>
           </div>
@@ -100,22 +122,10 @@ export const PwaIosGuideModal: React.FC<PwaIosGuideModalProps> = ({
 
         {/* Action button */}
         <button
-        onClick={() => {
-  const pwaPrompt = (window as any).deferredPwaPrompt;
-  if (pwaPrompt) {
-    pwaPrompt.prompt();
-    (window as any).deferredPwaPrompt = null;
-    onClose();
-  } else {
-    alert("Install prompt ready nahi hai. Ya to app pehle hi installed hai, ya browser ne ijazat nahi di.");
-    onClose();
-  }
-}}
-
-
+          onClick={handleInstallClick}
           className="w-full py-2.5 rounded-xl bg-[#00e5ff] text-[#030a16] font-black text-xs shadow-md active:scale-95 transition-all"
         >
-          INSTALL NOW
+          {isIos ? 'Samajh gaya' : 'INSTALL NOW'}
         </button>
 
       </div>
