@@ -100,13 +100,18 @@ export const PwaIosGuideModal: React.FC<PwaIosGuideModalProps> = ({
 
         {/* Action button */}
         <button
-          onClick={() => {
-  if (window.deferredPwaPrompt) {
-    window.deferredPwaPrompt.prompt();
-    window.deferredPwaPrompt = null;
+        onClick={() => {
+  const pwaPrompt = (window as any).deferredPwaPrompt;
+  if (pwaPrompt) {
+    pwaPrompt.prompt();
+    (window as any).deferredPwaPrompt = null;
+    onClose();
+  } else {
+    alert("Install prompt ready nahi hai. Ya to app pehle hi installed hai, ya browser ne ijazat nahi di.");
+    onClose();
   }
-  onClose();
-}
+}}
+
 
           className="w-full py-2.5 rounded-xl bg-[#00e5ff] text-[#030a16] font-black text-xs shadow-md active:scale-95 transition-all"
         >
