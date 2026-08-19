@@ -66,10 +66,15 @@ export const MatchCard: React.FC<MatchCardProps> = ({
     !isEnded &&
     (diff <= 0 || match.status === 'live');
 
-  const lockedCount = Array.isArray(match.locked_slots) ? match.locked_slots.length : 0;
-  const availableSlots = match.max_slots - lockedCount;
+  const maxSlotsSafe = Math.max(0, Number(match.max_slots) || 0);
+  const rawLocked = Array.isArray(match.locked_slots) ? match.locked_slots : [];
+  const validLocked = rawLocked.filter(
+    (n) => Number(n) >= 1 && Number(n) <= maxSlotsSafe
+  );
+  const lockedCount = validLocked.length;
+  const availableSlots = Math.max(0, maxSlotsSafe - lockedCount);
 
-  const isFull = match.booked_slots >= availableSlots;
+  const isFull = availableSlots <= 0 || match.booked_slots >= availableSlots;
   const hasRoomCredentials = Boolean(match.room_id || match.room_credentials?.some(c => c.room_id));
 
   // Determine button state, text, styling, and disable behavior
