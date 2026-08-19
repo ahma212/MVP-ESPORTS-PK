@@ -100,10 +100,17 @@ export const PwaIosGuideModal: React.FC<PwaIosGuideModalProps> = ({
 
         {/* Action button */}
         <button
-          onClick={onClose}
+          onClick={() => {
+  if (window.deferredPwaPrompt) {
+    window.deferredPwaPrompt.prompt();
+    window.deferredPwaPrompt = null;
+  }
+  onClose();
+}
+
           className="w-full py-2.5 rounded-xl bg-[#00e5ff] text-[#030a16] font-black text-xs shadow-md active:scale-95 transition-all"
         >
-          Got it
+          INSTALL NOW
         </button>
 
       </div>
