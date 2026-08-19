@@ -610,7 +610,9 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                 setLocalError(null);
                 setAuthMode(authMode === 'signup' ? 'login' : 'signup');
               }}
-            className="w-full py-2 px-4 rounded-xl bg-[#00e5ff]/10 border border-[#00e5ff]/40 text-[#00e5ff] hover:bg-[#00e5ff]/20 font-bold text-xs uppercase tracking-wider transition-all duration-200 block text-center active:scale-95"
+            className="w-full py-3 px-4 rounded-xl bg-[#00e5ff]/10 border border-[#00e5ff]/40 text-[#00e5ff] hover:bg-[#00e5ff]/20 font-bold text-sm uppercase tracking-wider transition-all duration-200 block text-center active:scale-95"
+
+
   className="w-full py-2 px-4 rounded-xl bg-[#00e5ff]/10 border border-[#00e5ff]/40 text-[#00e5ff] hover:bg-[#00e5ff]/20 font-bold text-xs uppercase tracking-wider transition-all duration-200 block text-center active:scale-95"
 className="w-full py-2 px-4 rounded-xl bg-[#00e5ff]/10 border border-[#00e5ff]/40 text-[#00e5ff] hover:bg-[#00e5ff]/20 font-bold text-xs uppercase tracking-wider transition-all duration-200 block text-center active:scale-95"
 className="w-full py-2 px-4 rounded-xl bg-[#00e5ff]/10 border border-[#00e5ff]/40 text-[#00e5ff] hover:bg-[#00e5ff]/20 font-bold text-xs uppercase tracking-wider transition-all duration-200 block text-center active:scale-95"
