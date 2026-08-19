@@ -1,0 +1,6 @@
+{
+  "name": "MVP Esports PK",
+  "description": "Pakistan PUBG Mobile Tournament Arena with daily cash matches, instant slot booking, Room ID/Pass distribution, and JazzCash/EasyPaisa wallet payouts.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

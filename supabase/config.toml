@@ -1,0 +1,4 @@
+[functions.daily-history-cleanup]
+schedule = "0 3 * * *"
+
+[functions.delete-old-chat-media]
