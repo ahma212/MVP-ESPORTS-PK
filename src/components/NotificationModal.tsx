@@ -101,9 +101,9 @@ export const NotificationModal: React.FC<NotificationModalProps> = ({
             { onConflict: 'user_id' }
           );
 
-        if (error) {
+      if (error) {
           console.error("Supabase save error:", error);
-          alert("Failed to save subscription. Check console.");
+          alert("Failed to save subscription:\n\n" + (error.message || JSON.stringify(error)));
           return;
         }
 
