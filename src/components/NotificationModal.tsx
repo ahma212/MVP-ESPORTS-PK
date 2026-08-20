@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { X, Bell, Check, ArrowLeft, ArrowDownLeft, ArrowUpRight, MessageSquare, Trash2, KeyRound, Megaphone, Info, Gamepad2, BellRing, BellOff } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Notification } from '../types';
+import type { Notification } from '../types';
 import { markNotificationRead, markAllNotificationsForUserRead, deleteNotification } from '../lib/supabase';
 
 // Aapki Vapid Public Key
