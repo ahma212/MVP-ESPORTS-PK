@@ -4,6 +4,9 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Notification } from '../types';
 import { markNotificationRead, markAllNotificationsForUserRead, deleteNotification } from '../lib/supabase';
 
+// Aapki Vapid Public Key
+const PUBLIC_VAPID_KEY = 'BBTrZfhNIUGcra1UA6sVAzlOUTFgTFb-Y5CeoAt3QRa6JTPh8bnUDh_y-GsjiP_ITENu6UR-iNmmcPPelzigJU';
+
 interface NotificationModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -38,8 +41,19 @@ export const NotificationModal: React.FC<NotificationModalProps> = ({
       if ('Notification' in window) {
         const permission = await Notification.requestPermission();
         if (permission === 'granted') {
-          setIsNotifyOn(true);
-          alert("Push notifications enabled successfully!");
+          try {
+            const registration = await navigator.serviceWorker.ready;
+            await registration.pushManager.subscribe({
+              userVisibleOnly: true,
+              applicationServerKey: PUBLIC_VAPID_KEY
+            });
+            setIsNotifyOn(true);
+            alert("Push notifications enabled successfully!");
+          } catch (err) {
+            console.error("Push subscription failed:", err);
+            setIsNotifyOn(true);
+            alert("Notifications permission granted!");
+          }
         } else {
           alert("Permission blocked. Please allow notifications from your browser settings.");
         }
