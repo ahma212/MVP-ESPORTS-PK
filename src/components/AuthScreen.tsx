@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Eye, EyeOff, AlertCircle, ArrowLeft, KeyRound, Mail, CheckCircle2, Lock } from 'lucide-react';
+import { Eye, EyeOff, AlertCircle, ArrowLeft, KeyRound, Mail, CheckCircle2 } from 'lucide-react';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
 interface AuthScreenProps {
@@ -158,7 +158,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
           return;
         }
         await onLogin(email.trim(), password);
-        // On success, reset attempt counter
         setFailedAttempts(0);
         setLockUntil(null);
       }
@@ -241,7 +240,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
 
     setResetLoading(true);
     try {
-      // If user typed a code manually
       if (recoveryCode.trim()) {
         const targetEmail = (resetEmail || email).trim();
         if (targetEmail) {
@@ -544,86 +542,4 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
               required
             />
 
-            <div className="relative">
-              <input
-                type={showPass ? 'text' : 'password'}
-                placeholder="Password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full p-3 rounded-xl bg-[#07192e] border border-[#00e5ff]/30 text-white text-xs focus:outline-none focus:border-[#00e5ff] placeholder:text-gray-500 pr-10"
-                required
-              />
-              <button
-                type="button"
-                onClick={() => setShowPass(!showPass)}
-                className="absolute right-3 top-3 text-gray-400 hover:text-white"
-              >
-                {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            </div>
-
-            <button
-              type="submit"
-              disabled={loading || (authMode === 'login' && isLocked)}
-              className={`w-full py-3.5 mt-2 rounded-xl font-black text-xs tracking-wider shadow-md active:scale-95 transition-all flex items-center justify-center gap-1.5 ${
-                authMode === 'login' && isLocked
-                  ? 'bg-gray-800 border border-red-500/50 text-red-400 cursor-not-allowed opacity-80 shadow-none'
-                  : 'bg-gradient-to-r from-[#00e5ff] to-[#0088ff] text-[#030a16] shadow-[#00e5ff]/20 hover:brightness-110 disabled:opacity-50'
-              }`}
-            >
-              {loading ? (
-                'Processing...'
-              ) : authMode === 'login' && isLocked ? (
-                <>
-                  <Lock className="w-3.5 h-3.5 text-red-400" />
-                  <span>LOGIN LOCKED ({formatMmSs(remainingLockTime)})</span>
-                </>
-              ) : authMode === 'signup' ? (
-                'REGISTER ESPORTS ACCOUNT'
-              ) : (
-                'LOGIN TO ARENA'
-              )}
-            </button>
-          </form>
-
-          {/* Forgot Password Link */}
-          {authMode === 'login' && (
-            <div className="mt-3 text-center">
-              <button
-                type="button"
-                onClick={() => {
-                  setResetEmail(email);
-                  setResetMessage(null);
-                  setForgotMode('send_email');
-                }}
-                className="text-xs text-[#00e5ff] hover:underline font-semibold transition-colors"
-              >
-                Forgot password?
-              </button>
-            </div>
-          )}
-
-          <div className="mt-5 text-center space-y-3">
-            <button
-              type="button"
-              onClick={() => {
-                setLocalError(null);
-                setAuthMode(authMode === 'signup' ? 'login' : 'signup');
-              }}
-            className="w-full py-3 px-4 rounded-xl bg-[#00e5ff]/10 border border-[#00e5ff]/40 text-[#00e5ff] hover:bg-[#00e5ff]/20 font-bold text-sm uppercase tracking-wider transition-all duration-200 block text-center active:scale-95"
-
-
-  className="w-full py-2 px-4 rounded-xl bg-[#00e5ff]/10 border border-[#00e5ff]/40 text-[#00e5ff] hover:bg-[#00e5ff]/20 font-bold text-xs uppercase tracking-wider transition-all duration-200 block text-center active:scale-95"
-className="w-full py-2 px-4 rounded-xl bg-[#00e5ff]/10 border border-[#00e5ff]/40 text-[#00e5ff] hover:bg-[#00e5ff]/20 font-bold text-xs uppercase tracking-wider transition-all duration-200 block text-center active:scale-95"
-className="w-full py-2 px-4 rounded-xl bg-[#00e5ff]/10 border border-[#00e5ff]/40 text-[#00e5ff] hover:bg-[#00e5ff]/20 font-bold text-xs uppercase tracking-wider transition-all duration-200 block text-center active:scale-95"
-
-
-            >
-              {authMode === 'signup' ? 'Already have an account? Login' : "Don't have an account? Create one"}
-            </button>
-          </div>
-        </>
-      )}
-    </div>
-  );
-};
+            <div 
