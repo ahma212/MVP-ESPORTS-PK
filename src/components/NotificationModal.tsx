@@ -43,6 +43,7 @@ export const NotificationModal: React.FC<NotificationModalProps> = ({
         if (permission === 'granted') {
           try {
             const registration = await navigator.serviceWorker.ready;
+            // @ts-ignore
             await registration.pushManager.subscribe({
               userVisibleOnly: true,
               applicationServerKey: PUBLIC_VAPID_KEY
