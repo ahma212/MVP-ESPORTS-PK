@@ -1,5 +1,5 @@
-import React, { useEffect } from 'react';
-import { X, Bell, Check, ArrowLeft, ArrowDownLeft, ArrowUpRight, MessageSquare, Trash2, KeyRound, Megaphone, Info, Gamepad2 } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { X, Bell, Check, ArrowLeft, ArrowDownLeft, ArrowUpRight, MessageSquare, Trash2, KeyRound, Megaphone, Info, Gamepad2, BellRing, BellOff } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Notification } from '../types';
 import { markNotificationRead, markAllNotificationsForUserRead, deleteNotification } from '../lib/supabase';
@@ -23,6 +23,33 @@ export const NotificationModal: React.FC<NotificationModalProps> = ({
   onHidePublic,
   onMarkAllPublicRead
 }) => {
+  const [isNotifyOn, setIsNotifyOn] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      if (Notification.permission === 'granted') {
+        setIsNotifyOn(true);
+      }
+    }
+  }, []);
+
+  const handleToggleNotifications = async () => {
+    if (!isNotifyOn) {
+      if ('Notification' in window) {
+        const permission = await Notification.requestPermission();
+        if (permission === 'granted') {
+          setIsNotifyOn(true);
+          alert("Push notifications enabled successfully!");
+        } else {
+          alert("Permission blocked. Please allow notifications from your browser settings.");
+        }
+      }
+    } else {
+      setIsNotifyOn(false);
+      alert("Notifications turned off for this session.");
+    }
+  };
+
   const handleMarkRead = async (notification: Notification) => {
     if (notification.user_id) {
       await markNotificationRead(notification.id);
@@ -59,16 +86,6 @@ export const NotificationModal: React.FC<NotificationModalProps> = ({
     }
     onRefresh();
   };
-
-  // Auto-read system: When notification panel is opened, automatically mark all unread notifications as read
-  useEffect(() => {
-    if (isOpen) {
-      const unreadCount = notifications.filter(n => !n.is_read).length;
-      if (unreadCount > 0) {
-        handleMarkAllRead();
-      }
-    }
-  }, [isOpen, notifications]);
 
   const getNotificationIcon = (type: string) => {
     switch (type) {
@@ -170,6 +187,19 @@ export const NotificationModal: React.FC<NotificationModalProps> = ({
             </div>
 
             <div className="flex items-center gap-2">
+              {/* Notification Permission Toggle Button */}
+              <button
+                onClick={handleToggleNotifications}
+                className={`px-3 py-1.5 rounded-lg border text-[10px] font-bold tracking-wider transition-all flex items-center gap-1.5 uppercase ${
+                  isNotifyOn 
+                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' 
+                    : 'bg-rose-500/10 border-rose-500/30 text-rose-400'
+                }`}
+              >
+                {isNotifyOn ? <BellRing className="w-3.5 h-3.5" /> : <BellOff className="w-3.5 h-3.5" />}
+                <span>{isNotifyOn ? 'Alerts ON' : 'Alerts OFF'}</span>
+              </button>
+
               {unreadCount > 0 && (
                 <button
                   onClick={handleMarkAllRead}
@@ -216,7 +246,6 @@ export const NotificationModal: React.FC<NotificationModalProps> = ({
                       dragConstraints={{ left: 0, right: 0 }}
                       dragElastic={0.6}
                       onDragEnd={(e, info) => {
-                        // If user swiped more than 120px in either direction, delete notification
                         if (Math.abs(info.offset.x) > 120) {
                           handleDelete(n);
                         }
@@ -242,7 +271,7 @@ export const NotificationModal: React.FC<NotificationModalProps> = ({
                                 {n.title}
                               </h3>
                               
-                              {/* Small unread dot indicator */}
+                              {/* Only show Red Dot indicator if the notification is NOT read */}
                               {!n.is_read && (
                                 <span className="w-2 h-2 rounded-full bg-red-500 animate-ping flex-shrink-0 mt-1.5" />
                               )}
