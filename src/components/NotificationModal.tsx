@@ -2,10 +2,22 @@ import React, { useEffect, useState } from 'react';
 import { X, Bell, Check, ArrowLeft, ArrowDownLeft, ArrowUpRight, MessageSquare, Trash2, KeyRound, Megaphone, Info, Gamepad2, BellRing, BellOff } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import type { Notification } from '../types';
-import { markNotificationRead, markAllNotificationsForUserRead, deleteNotification } from '../lib/supabase';
+import { markNotificationRead, markAllNotificationsForUserRead, deleteNotification, supabase } from '../lib/supabase';
 
-// Aapki Vapid Public Key
-const PUBLIC_VAPID_KEY = 'BBTrZfhNIUGcra1UA6sVAzlOUTFgTFb-Y5CeoAt3QRa6JTPh8bnUDh_y-GsjiP_ITENu6UR-iNmmcPPelzigJU';
+// Sahi VAPID Public Key
+const PUBLIC_VAPID_KEY = 'BBTrZfhNIUGcra1UA6svAzlOUTFgTFb-Y5cEoAt3QRa6JTPh8bnqUDh_y-GsjiP_ITENu6UR-iNmmcPPelzlgJU';
+
+// Helper function - VAPID key ko Uint8Array mein convert karta hai
+function urlBase64ToUint8Array(base64String: string) {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
 
 interface NotificationModalProps {
   isOpen: boolean;
@@ -38,26 +50,68 @@ export const NotificationModal: React.FC<NotificationModalProps> = ({
 
   const handleToggleNotifications = async () => {
     if (!isNotifyOn) {
-      if ('Notification' in window) {
+      try {
+        // 1. Service Worker register + ready
+        const registration = await navigator.serviceWorker.register('/sw.js');
+        await navigator.serviceWorker.ready;
+
+        // 2. Permission maango
         const permission = await Notification.requestPermission();
-        if (permission === 'granted') {
-          try {
-            const registration = await navigator.serviceWorker.ready;
-            // @ts-ignore
-            await registration.pushManager.subscribe({
-              userVisibleOnly: true,
-              applicationServerKey: PUBLIC_VAPID_KEY
-            });
-            setIsNotifyOn(true);
-            alert("Push notifications enabled successfully!");
-          } catch (err) {
-            console.error("Push subscription failed:", err);
-            setIsNotifyOn(true);
-            alert("Notifications permission granted!");
-          }
-        } else {
-          alert("Permission blocked. Please allow notifications from your browser settings.");
+        if (permission !== 'granted') {
+          alert("Permission blocked. Please allow notifications from browser settings.");
+          return;
         }
+
+        // 3. Push subscription lo
+        let subscription = await registration.pushManager.getSubscription();
+        if (!subscription) {
+          subscription = await registration.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: urlBase64ToUint8Array(PUBLIC_VAPID_KEY)
+          });
+        }
+
+        // 4. Details nikaalo
+        const subJson = subscription.toJSON();
+        const endpoint = subJson.endpoint;
+        const p256dh = subJson.keys?.p256dh;
+        const auth = subJson.keys?.auth;
+
+        if (!endpoint || !p256dh || !auth) {
+          throw new Error("Invalid subscription data");
+        }
+
+        // 5. Current logged-in user
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
+        if (userError || !user) {
+          alert("Please login first to enable push notifications");
+          return;
+        }
+
+        // 6. Supabase mein save / update
+        const { error } = await supabase
+          .from('push_subscriptions')
+          .upsert(
+            {
+              user_id: user.id,
+              endpoint: endpoint,
+              p256dh: p256dh,
+              auth: auth
+            },
+            { onConflict: 'user_id' }
+          );
+
+        if (error) {
+          console.error("Supabase save error:", error);
+          alert("Failed to save subscription. Check console.");
+          return;
+        }
+
+        setIsNotifyOn(true);
+        alert("✅ Push notifications enabled successfully!");
+      } catch (err) {
+        console.error("Push subscription failed:", err);
+        alert("Failed to enable notifications. Check console for details.");
       }
     } else {
       setIsNotifyOn(false);
