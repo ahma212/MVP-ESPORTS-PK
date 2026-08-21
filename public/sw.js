@@ -19,10 +19,14 @@ self.addEventListener('fetch', (event) => {
 });
 
 // ==========================================
-// ADDED: Push Notification Listeners
+// ADDED: VIP Push Notification Listeners
 // ==========================================
 self.addEventListener('push', (event) => {
-  let data = { title: 'MVP ESPORTS PK', body: 'New notification received!', url: '/' };
+  let data = { 
+    title: '👑 MVP ESPORTS VIP', 
+    body: 'Aapke paas ek naya VIP notification aaya hai!', 
+    url: '/' 
+  };
   
   if (event.data) {
     try {
@@ -34,14 +38,17 @@ self.addEventListener('push', (event) => {
 
   const options = {
     body: data.body,
-    icon: '/icon-192.png',
-    badge: '/icon-192.png',
-    vibrate: [200, 100, 200],
+    icon: data.icon || '/icon-192.png',
+    badge: data.badge || '/icon-192-maskable.png',
+    image: data.image || null,
+    vibrate: [200, 100, 200, 100, 200],
+    tag: 'vip-notification',
+    renotify: true,
     data: { url: data.url || '/' }
   };
 
   event.waitUntil(
-    self.registration.showNotification(data.title, options)
+    self.registration.showNotification(data.title || '👑 MVP ESPORTS VIP', options)
   );
 });
 
@@ -52,7 +59,7 @@ self.addEventListener('notificationclick', (event) => {
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
       for (let client of windowClients) {
-        if (client.url === targetUrl && 'focus' in client) {
+        if ((client.url === targetUrl || client.url.includes(targetUrl)) && 'focus' in client) {
           return client.focus();
         }
       }
