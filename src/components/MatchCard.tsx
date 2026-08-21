@@ -53,10 +53,15 @@ export const MatchCard: React.FC<MatchCardProps> = ({
 
   const diff = startTimestamp - now;
 
+  // Real-time based Match Status Calculation:
+  // Home MatchCard "MATCH HAS ENDED" must depend ONLY on real time logic:
+  // 1) Countdown / play window has expired (diff <= -30 * 60 * 1000)
+  // 2) OR admin explicitly ended the match when scheduled time has arrived/passed (match.is_ended === true && diff <= 0)
   const isEnded =
     (diff <= -30 * 60 * 1000) ||
     (Boolean(match.is_ended) && diff <= 0);
 
+  // Match ONLY starts when its scheduled countdown time expires (diff <= 0) or status is 'live'
   const isStarted =
     !isEnded &&
     (diff <= 0 || match.status === 'live');
@@ -72,6 +77,7 @@ export const MatchCard: React.FC<MatchCardProps> = ({
   const isFull = availableSlots <= 0 || match.booked_slots >= availableSlots;
   const hasRoomCredentials = Boolean(match.room_id || match.room_credentials?.some(c => c.room_id));
 
+  // Determine button state, text, styling, and disable behavior
   let buttonText = 'SLOT BOOK NOW';
   let buttonStyle = 'bg-cyan-500 hover:bg-cyan-400 text-black font-extrabold cursor-pointer shadow-md shadow-cyan-500/20 active:scale-[0.98]';
   let isDisabled = false;
@@ -107,6 +113,7 @@ export const MatchCard: React.FC<MatchCardProps> = ({
 
   const percentageBooked = Math.round((match.booked_slots / Math.max(1, availableSlots)) * 100);
 
+  // Map tag styling
   const getMapBadge = (map: string) => {
     switch (map.toLowerCase()) {
       case 'erangel':
@@ -132,6 +139,7 @@ export const MatchCard: React.FC<MatchCardProps> = ({
 
   const activeMaps = tournamentMaps;
 
+  // Dynamically compute active prizes (>0) to maintain 100% card vs modal consistency
   const activePrizes: Array<{ key: string; label: string; value: string; color: string; isKill?: boolean }> = [];
   
   if (match.prizes?.first_prize && match.prizes.first_prize > 0) {
@@ -197,6 +205,7 @@ export const MatchCard: React.FC<MatchCardProps> = ({
         gridColsClass = 'grid-cols-2';
         cellHeight = 'h-24 sm:h-28';
       } else {
+        // 5 or 6 maps
         gridColsClass = 'grid-cols-3';
         cellHeight = 'h-20 sm:h-24';
       }
@@ -212,19 +221,20 @@ export const MatchCard: React.FC<MatchCardProps> = ({
             const badgeColor = badgeColors[idx % badgeColors.length];
 
             return (
-              <div key={idx} className={`relative rounded-lg overflow-hidden border border-gray-800/80 ${cellHeight} group bg-black/40 shadow-inner`}>
+              <div key={idx} className={`relative rounded-lg overflow-hidden border border-[#00e5ff]/25 ${cellHeight} group bg-black/40 shadow-[0_0_12px_rgba(0,229,255,0.08)]`}>
                 <img 
                   src={bannerUrl} 
                   alt={mapName} 
-                  className="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-300"
+                  className="w-full h-full object-cover object-center transform group-hover:scale-105 transition-transform duration-300"
                   loading="lazy"
                   referrerPolicy="no-referrer"
                   onError={(e) => {
                     (e.target as HTMLImageElement).src = getMapImage(mapName);
                   }}
                 />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/30 to-transparent flex items-end justify-center pb-1">
-                  <span className={`text-[9px] font-black uppercase tracking-wider text-center px-1 truncate w-full ${badgeColor}`}>
+                {/* Clean small badge - no heavy black blanket */}
+                <div className="absolute bottom-1.5 left-1 right-1 flex justify-center">
+                  <span className={`text-[9px] font-black uppercase tracking-wider text-center px-1.5 py-0.5 rounded-md bg-black/65 backdrop-blur-sm border border-white/10 ${badgeColor}`}>
                     {idx + 1}. {mapName}
                   </span>
                 </div>
@@ -234,25 +244,22 @@ export const MatchCard: React.FC<MatchCardProps> = ({
         </div>
       );
     } else {
-      // Single map normal card - VIP look
+      // Single map normal card - clean full image, no black blanket
       imageArea = (
-        <div className="relative rounded-xl overflow-hidden border border-[#00e5ff]/40 h-48 sm:h-52 min-h-[12rem] w-full my-2.5 shadow-[0_0_20px_rgba(0,229,255,0.25)]">
+        <div className="relative rounded-xl overflow-hidden border border-[#00e5ff]/30 h-44 sm:h-48 min-h-[11rem] w-full my-2.5 shadow-[0_0_18px_rgba(0,229,255,0.12)]">
           <img 
             src={match.banner_url || getMapImage(match.map)} 
             alt={`${match.map} Map`} 
-            className="w-full h-full object-cover object-center scale-105"
+            className="w-full h-full object-cover object-center"
             loading="lazy"
             referrerPolicy="no-referrer"
             onError={(e) => {
               (e.target as HTMLImageElement).src = getMapImage(match.map);
             }}
           />
-          {/* Soft gradient only at bottom */}
-          <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent"></div>
-          
-          {/* Map label */}
-          <div className="absolute bottom-0 left-0 right-0 p-2.5 flex items-end">
-            <span className="text-xs font-black text-white uppercase tracking-wider drop-shadow-lg">
+          {/* Clean small MAP badge - no full-width black gradient */}
+          <div className="absolute bottom-2.5 left-2.5">
+            <span className="text-[10px] font-black text-white uppercase tracking-wider bg-black/60 backdrop-blur-sm px-2.5 py-1 rounded-md border border-white/15 shadow-sm">
               MAP: {match.map.toUpperCase()}
             </span>
           </div>
@@ -271,13 +278,11 @@ export const MatchCard: React.FC<MatchCardProps> = ({
   return (
     <div 
       onClick={() => onSelectMatch(match)}
-      className={`rounded-xl bg-gradient-to-b from-[#07192e] to-[#040e1a] border relative overflow-hidden transition-all duration-300 hover:border-[#00e5ff]/70 cursor-pointer flex flex-col justify-between ${
-        isBookedByMe 
-          ? 'border-[#00e5ff] shadow-[0_0_25px_rgba(0,229,255,0.45)] ring-1 ring-[#00e5ff]/40' 
-          : 'border-[#00e5ff]/40 shadow-[0_0_18px_rgba(0,229,255,0.25)]'
+      className={`rounded-xl bg-gradient-to-b from-[#07192e] to-[#040e1a] border relative overflow-hidden shadow-xl transition-all duration-200 hover:border-[#00e5ff]/60 cursor-pointer flex flex-col justify-between ${
+        isBookedByMe ? 'border-[#00e5ff] ring-1 ring-[#00e5ff]/50' : 'border-[#00e5ff]/30'
       } ${
         isTournament 
-          ? 'p-5 md:p-6 min-h-[460px] md:min-h-[500px] border-amber-500/40 shadow-[0_0_25px_rgba(245,158,11,0.25)]' 
+          ? 'p-5 md:p-6 min-h-[460px] md:min-h-[500px] border-amber-500/30 shadow-amber-500/5' 
           : 'p-3'
       }`}
     >
@@ -354,7 +359,7 @@ export const MatchCard: React.FC<MatchCardProps> = ({
       {/* MAP IMAGES PREVIEW */}
       {imageArea}
 
-      {/* Prize Pool Breakdown Grid */}
+      {/* Prize Pool Breakdown Grid - Dynamic & Consistent */}
       {activePrizes.length > 0 && (
         <div className={`grid gap-1.5 my-2.5 p-2 bg-[#020710] rounded-lg border border-gray-800 text-center ${
           activePrizes.length === 1 ? 'grid-cols-1' :
@@ -374,7 +379,7 @@ export const MatchCard: React.FC<MatchCardProps> = ({
         </div>
       )}
 
-      {/* Entry Fee &Slots Count */}
+      {/* Entry Fee & slots Count */}
       <div className="flex justify-between items-center text-[11px] my-2 text-gray-300 font-semibold">
         <span>Entry: <strong className="text-[#00e5ff]">RS. {match.entry_fee} / Player</strong></span>
         <span className="flex items-center gap-1">
@@ -385,7 +390,7 @@ export const MatchCard: React.FC<MatchCardProps> = ({
         </span>
       </div>
 
-      {/*Slots Progress Bar */}
+      {/* Slots Progress Bar */}
       <div className="w-full bg-gray-800/80 rounded-full h-1.5 mb-3 overflow-hidden border border-gray-700/50">
         <div
           className={`h-1.5 rounded-full transition-all duration-500 ${
