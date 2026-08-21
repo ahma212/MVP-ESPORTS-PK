@@ -1915,16 +1915,26 @@ const pendingDepositTransactions = Array.isArray(realtimeDepositRequests) && rea
                       >
                         <X className="w-2.5 h-2.5" />
                       </button>
-           )}
+)}
                 </div>
-              )
-            )}
+              );
+            })}
           </div>
         </div>
-      )
+      );
     }
   };
-  };
+
+  if (!isOpen) return null;
+
+  // Filter transactions
+  const pendingDepositTransactions = realtimeDepositRequests.length > 0
+    ? realtimeDepositRequests
+    : transactions.filter((t) => t.type === 'deposit' && t.status === 'pending');
+  const pendingWithdrawalTransactions = realtimeWithdrawalRequests.length > 0
+    ? realtimeWithdrawalRequests
+    : transactions.filter((t) => t.type === 'withdrawal' && t.status === 'pending');
+  const auditLogs = transactions.filter((t) => t.status !== 'pending');
   const auditLogs = transactions.filter((t) => t.status !== 'pending');
 
   // Refresh active match maps
