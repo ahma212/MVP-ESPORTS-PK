@@ -221,7 +221,22 @@ export const NotificationModal: React.FC<NotificationModalProps> = ({
     return result;
   }, [notifications]);
 
-  const unreadCount = uniqueNotifications.filter(n => !n.is_read).length;
+    // Fix: Persistent unread count using localStorage
+  const savedReadIds = JSON.parse(localStorage.getItem('app_read_notifications') || '[]');
+  
+  useEffect(() => {
+    if (isOpen && uniqueNotifications.length > 0) {
+      const allIds = uniqueNotifications.map(n => n.id);
+      const merged = Array.from(new Set([...savedReadIds, ...allIds]));
+      localStorage.setItem('app_read_notifications', JSON.stringify(merged));
+    }
+  }, [isOpen, uniqueNotifications]);
+
+  const unreadCount = uniqueNotifications.filter(n => {
+    if (n.is_read) return false;
+    if (savedReadIds.includes(n.id)) return false;
+    return true;
+  }).length;
 
   return (
     <AnimatePresence>
