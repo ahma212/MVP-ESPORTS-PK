@@ -884,7 +884,13 @@ sendPushNotification({
       loadBansList();
     }
   }, [activeTab]);
+const pendingDepositTransactions = Array.isArray(realtimeDepositRequests) && realtimeDepositRequests.length > 0
+    ? realtimeDepositRequests
+    : (Array.isArray(transactions) ? transactions.filter((t) => t && t.type === 'deposit' && t.status === 'pending') : []);
 
+  const pendingWithdrawalTransactions = Array.isArray(realtimeWithdrawalRequests) && realtimeWithdrawalRequests.length > 0
+    ? realtimeWithdrawalRequests
+    : (Array.isArray(transactions) ? transactions.filter((t) => t && t.type === 'withdrawal' && t.status === 'pending') : []);
   const pendingDepositsCount = Array.isArray(realtimeDepositRequests) && realtimeDepositRequests.length > 0
     ? realtimeDepositRequests.length
     : (Array.isArray(transactions) ? transactions.filter(t => t && t.type === 'deposit' && t.status === 'pending').length : 0);
@@ -1784,6 +1790,7 @@ sendPushNotification({
       loadDraftResults(resultMatchId);
     }
   }, [resultMatchId, activeTab]);
+  
 
               return (
                 <div key={idx} className="p-3 rounded-xl bg-[#020710]/80 border border-gray-800 flex-col justify-between">
@@ -1847,7 +1854,7 @@ sendPushNotification({
                         isUploadingMapBanner[idx]
                           ? 'bg-gray-800 text-gray-400 cursor-not-allowed border-gray-700'
                           : (isAnyUploading
-                              ? 'bg-gray-800/40 text-gray-500 cursor-not-allowed border-gray-800'
+? 'bg-gray-800/40 text-gray-500 cursor-not-allowed border-gray-800'
                               : 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border-amber-500/30')
                       }`}>
                         <span>{isUploadingMapBanner[idx] ? '⏳ Uploading...' : `📁 Device Upload`}</span>
@@ -1911,23 +1918,13 @@ sendPushNotification({
                     </div>
                   )}
                 </div>
-              );
+              )
             })}
           </div>
         </div>
-      );
+      )
     }
   };
-
-  if (!isOpen) return null;
-
-  // Filter transactions
-  const pendingDepositTransactions = realtimeDepositRequests.length > 0
-    ? realtimeDepositRequests
-    : transactions.filter((t) => t.type === 'deposit' && t.status === 'pending');
-  const pendingWithdrawalTransactions = realtimeWithdrawalRequests.length > 0
-    ? realtimeWithdrawalRequests
-    : transactions.filter((t) => t.type === 'withdrawal' && t.status === 'pending');
   const auditLogs = transactions.filter((t) => t.status !== 'pending');
 
   // Refresh active match maps
