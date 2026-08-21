@@ -1915,15 +1915,15 @@ const pendingDepositTransactions = Array.isArray(realtimeDepositRequests) && rea
                       >
                         <X className="w-2.5 h-2.5" />
                       </button>
-                    </div>
-                  )}
+           )}
                 </div>
               )
-            })
+            )}
           </div>
         </div>
       )
     }
+  };
   };
   const auditLogs = transactions.filter((t) => t.status !== 'pending');
 
