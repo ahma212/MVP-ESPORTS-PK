@@ -8,6 +8,17 @@ import { AdminRulesPanel } from './AdminRulesPanel';
 import { AdminPlayersHub } from './AdminPlayersHub';
 import { PubgSeatGrid } from './PubgSeatGrid';
 import { ChatMessage } from '../types';
+// Safe Push Notification Helper
+const sendPushNotification = (payload: any) => {
+  fetch('https://rsqakcncemlkscobizcr.supabase.co/functions/v1/send-push', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer sb_publishable_uo4Pa8vev48bV3KP75rr8A_G-_72OvB'
+    },
+    body: JSON.stringify(payload)
+  }).catch(err => console.log("Push failed silently:", err));
+};
 
 interface AdminPanelModalProps {
   isOpen: boolean;
@@ -295,6 +306,14 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
       if (onDataRefresh) {
         onDataRefresh();
       }
+      // Transaction Approve Notification Call
+sendPushNotification({
+  target_type: 'single_user',
+  transaction_id: txId,
+  title: 'Transaction Approved ✅',
+  message: 'Aapki deposit/withdrawal request approve ho gayi hai!'
+});
+
       // Re-fetch only if needed
       if (activeTab === 'deposits') fetchPendingDepositRequests();
       if (activeTab === 'withdrawals') fetchPendingWithdrawalRequests();
@@ -2409,6 +2428,13 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
         0,
         override
       );
+      sendPushNotification({
+  target_type: 'topic',
+  topic: selectedMatchId,
+  title: 'Room Details Released 🎮',
+  message: `Room ID: ${firstValid?.room_id || ''} | Pass: ${firstValid?.room_password || ''}`
+});
+
     } else {
       // Force-capture inputs from state
       const currentRoomId = roomId.trim();
