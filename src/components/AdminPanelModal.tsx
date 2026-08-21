@@ -8,17 +8,6 @@ import { AdminRulesPanel } from './AdminRulesPanel';
 import { AdminPlayersHub } from './AdminPlayersHub';
 import { PubgSeatGrid } from './PubgSeatGrid';
 import { ChatMessage } from '../types';
-// Safe Push Notification Helper
-const sendPushNotification = (payload: any) => {
-  fetch('https://rsqakcncemlkscobizcr.supabase.co/functions/v1/send-push', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer sb_publishable_uo4Pa8vev48bV3KP75rr8A_G-_72OvB'
-    },
-    body: JSON.stringify(payload)
-  }).catch(err => console.log("Push failed silently:", err));
-};
 
 interface AdminPanelModalProps {
   isOpen: boolean;
@@ -306,14 +295,6 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
       if (onDataRefresh) {
         onDataRefresh();
       }
-      // Transaction Approve Notification Call
-sendPushNotification({
-  target_type: 'single_user',
-  transaction_id: txId,
-  title: 'Transaction Approved ✅',
-  message: 'Aapki deposit/withdrawal request approve ho gayi hai!'
-});
-
       // Re-fetch only if needed
       if (activeTab === 'deposits') fetchPendingDepositRequests();
       if (activeTab === 'withdrawals') fetchPendingWithdrawalRequests();
@@ -884,13 +865,7 @@ sendPushNotification({
       loadBansList();
     }
   }, [activeTab]);
-const pendingDepositTransactions = Array.isArray(realtimeDepositRequests) && realtimeDepositRequests.length > 0
-    ? realtimeDepositRequests
-    : (Array.isArray(transactions) ? transactions.filter((t) => t && t.type === 'deposit' && t.status === 'pending') : []);
 
-  const pendingWithdrawalTransactions = Array.isArray(realtimeWithdrawalRequests) && realtimeWithdrawalRequests.length > 0
-    ? realtimeWithdrawalRequests
-    : (Array.isArray(transactions) ? transactions.filter((t) => t && t.type === 'withdrawal' && t.status === 'pending') : []);
   const pendingDepositsCount = Array.isArray(realtimeDepositRequests) && realtimeDepositRequests.length > 0
     ? realtimeDepositRequests.length
     : (Array.isArray(transactions) ? transactions.filter(t => t && t.type === 'deposit' && t.status === 'pending').length : 0);
@@ -1790,7 +1765,6 @@ const pendingDepositTransactions = Array.isArray(realtimeDepositRequests) && rea
       loadDraftResults(resultMatchId);
     }
   }, [resultMatchId, activeTab]);
-  
 
               return (
                 <div key={idx} className="p-3 rounded-xl bg-[#020710]/80 border border-gray-800 flex-col justify-between">
@@ -1854,7 +1828,7 @@ const pendingDepositTransactions = Array.isArray(realtimeDepositRequests) && rea
                         isUploadingMapBanner[idx]
                           ? 'bg-gray-800 text-gray-400 cursor-not-allowed border-gray-700'
                           : (isAnyUploading
-? 'bg-gray-800/40 text-gray-500 cursor-not-allowed border-gray-800'
+                              ? 'bg-gray-800/40 text-gray-500 cursor-not-allowed border-gray-800'
                               : 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border-amber-500/30')
                       }`}>
                         <span>{isUploadingMapBanner[idx] ? '⏳ Uploading...' : `📁 Device Upload`}</span>
@@ -1915,7 +1889,8 @@ const pendingDepositTransactions = Array.isArray(realtimeDepositRequests) && rea
                       >
                         <X className="w-2.5 h-2.5" />
                       </button>
-)}
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -1934,7 +1909,6 @@ const pendingDepositTransactions = Array.isArray(realtimeDepositRequests) && rea
   const pendingWithdrawalTransactions = realtimeWithdrawalRequests.length > 0
     ? realtimeWithdrawalRequests
     : transactions.filter((t) => t.type === 'withdrawal' && t.status === 'pending');
-  const auditLogs = transactions.filter((t) => t.status !== 'pending');
   const auditLogs = transactions.filter((t) => t.status !== 'pending');
 
   // Refresh active match maps
@@ -2435,13 +2409,6 @@ const pendingDepositTransactions = Array.isArray(realtimeDepositRequests) && rea
         0,
         override
       );
-      sendPushNotification({
-  target_type: 'topic',
-  topic: selectedMatchId,
-  title: 'Room Details Released 🎮',
-  message: `Room ID: ${firstValid?.room_id || ''} | Pass: ${firstValid?.room_password || ''}`
-});
-
     } else {
       // Force-capture inputs from state
       const currentRoomId = roomId.trim();
