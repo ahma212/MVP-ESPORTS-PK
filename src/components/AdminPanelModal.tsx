@@ -1919,7 +1919,7 @@ const pendingDepositTransactions = Array.isArray(realtimeDepositRequests) && rea
                   )}
                 </div>
               )
-            })}
+            })
           </div>
         </div>
       )
