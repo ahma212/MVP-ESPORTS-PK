@@ -6,7 +6,7 @@ import { markNotificationRead, markAllNotificationsForUserRead, deleteNotificati
 
 // Sahi VAPID Public Key
 const PUBLIC_VAPID_KEY =
-  'BNV-wpFWCVbRfyTYJi-1Q3Iq5OL6zYahjmzVy5O89Ogd1ga739ng8RC2nHeoTb3u4L0r3YPULxUOUuab9nMfdHM';
+  'BNV-wpFWCVbRfyTYJi-1Q3Iq5OL6zYahjmzVy5O89Ogd1ga739ng' +'8RC2nHeoTb3u4L0r3YPULxUOUuab9nMfdHM';
 
 // Helper function - VAPID key ko Uint8Array mein convert karta hai
 function urlBase64ToUint8Array(base64String: string) {
