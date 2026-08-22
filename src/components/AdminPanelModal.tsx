@@ -5844,7 +5844,7 @@ const pendingDepositTransactions = Array.isArray(realtimeDepositRequests) && rea
                 </div>
               </div>
 
-             className="mt-4 pt-3 pb-6 border-t border-[#00e5ff]/15"
+       <div className="mt-4 pt-3 pb-6 border-t border-[#00e5ff]/15">
                 <button
                   type="submit"
                   disabled={isCreatingMatch || isUploadingBanner || isUploadingMapBanner.some(Boolean)}
