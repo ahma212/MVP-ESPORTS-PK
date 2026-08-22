@@ -206,6 +206,7 @@ export interface Notification {
   type: string;
   match_id?: string;
   announcement_id?: string;
+  image?: string;
   created_at: string;
 }
 
@@ -312,5 +313,3 @@ export interface Poll {
   voters?: PollVoter[];
   total_votes?: number;
 }
-
-

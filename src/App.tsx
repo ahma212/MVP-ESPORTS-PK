@@ -2324,14 +2324,15 @@ export default function App() {
 
     // Trigger global notification
     try {
-      await createNotification({
-        user_id: null,
-        title: "New Tournament Available",
-        message: `🎮 New Tournament Available! ${newMatchRaw.title} is now open for booking.`,
-        is_read: false,
-        type: 'announcement',
-        match_id: newMatchRaw.id
-      });
+    await createNotification({
+  user_id: null,
+  title: "New Tournament Available",
+  message: `🎮 New Tournament Available! ${newMatchRaw.title} is now open for booking.`,
+  is_read: false,
+  type: 'announcement',
+  match_id: newMatchRaw.id,
+  image: newMatchRaw.banner_url || undefined
+});
     } catch (err) {
       console.warn('Error creating match notification:', err);
     }
