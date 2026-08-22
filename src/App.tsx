@@ -1727,8 +1727,8 @@ export default function App() {
     setActiveBottomTab('home');
     setSearchQuery('');
     setMatchTab('all');
-    localStorage.removeItem('app_read_notifications');
-  localStorage.removeItem('app_hidden_notifications');
+/* localStorage.removeItem('app_read_notifications');
+localStorage.removeItem('app_hidden_notifications'); */
     if (isSupabaseConfigured() && supabase) {
       supabase.auth.signOut().catch(err => console.warn("Supabase signout notice:", err));
     }
