@@ -1733,8 +1733,12 @@ localStorage.removeItem('app_hidden_notifications'); */
       supabase.auth.signOut().catch(err => console.warn("Supabase signout notice:", err));
     }
     try {
+      const keepRead = localStorage.getItem('app_read_notifications');
+      const keepHidden = localStorage.getItem('app_hidden_notifications');
       localStorage.clear();
       sessionStorage.clear();
+      if (keepRead) localStorage.setItem('app_read_notifications', keepRead);
+      if (keepHidden) localStorage.setItem('app_hidden_notifications', keepHidden);
     } catch (e) {
       console.warn("Storage clear notice:", e);
     }

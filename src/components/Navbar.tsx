@@ -150,11 +150,20 @@ export const Navbar: React.FC<NavbarProps> = ({
     setNotifications(data);
   };
 
-  const visibleNotifications = notifications
-    .filter(n => !hiddenPublicIds.includes(n.id))
-    .map(n => readPublicIds.includes(n.id) ? { ...n, is_read: true } : n);
+  const twentyFourHoursAgo = Date.now() - 24 * 60 * 60 * 1000;
 
-  const unreadCount = visibleNotifications.filter(n => !n.is_read).length;
+  const visibleNotifications = notifications
+    .filter((n) => {
+      if (hiddenPublicIds.includes(n.id)) return false;
+      const t = new Date(n.created_at).getTime();
+      if (!isNaN(t) && t < twentyFourHoursAgo) return false;
+      return true;
+    })
+    .map((n) =>
+      readPublicIds.includes(n.id) ? { ...n, is_read: true } : n
+    );
+
+  const unreadCount = visibleNotifications.filter((n) => !n.is_read).length;
 
   useEffect(() => {
     if (isDrawerOpen) {

@@ -1910,12 +1910,24 @@ export async function saveRules(content: string): Promise<void> {
 export async function getNotifications(userId: string): Promise<Notification[]> {
   if (isSupabaseConfigured() && supabase) {
     try {
-      const { data, error } = await supabase
+      const { data: rawData, error } = await supabase
         .from('notifications')
         .select('*')
         .or(`user_id.eq.${userId},user_id.is.null`)
         .order('created_at', { ascending: false });
-      if (!error && Array.isArray(data)) {
+      if (!error && Array.isArray(rawData)) {
+        // 24h se purani hatao
+        const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+        const oldIds = rawData
+          .filter((n: any) => n.created_at && n.created_at < cutoff)
+          .map((n: any) => n.id)
+          .filter(Boolean);
+        if (oldIds.length > 0) {
+          await supabase.from('notifications').delete().in('id', oldIds);
+        }
+        const data = rawData.filter(
+          (n: any) => !n.created_at || n.created_at >= cutoff
+        );
         // Deduplicate notifications by ID and event proximity
         const seenIds = new Set<string>();
         const deduplicated: Notification[] = [];

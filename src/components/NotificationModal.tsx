@@ -221,23 +221,35 @@ export const NotificationModal: React.FC<NotificationModalProps> = ({
     }
     return result;
   }, [notifications]);
-
-    // Fix: Persistent unread count using localStorage
-  const savedReadIds = JSON.parse(localStorage.getItem('app_read_notifications') || '[]');
-  
+// Jab notification section open ho → sab auto-read
   useEffect(() => {
-    if (isOpen && uniqueNotifications.length > 0) {
-      const allIds = uniqueNotifications.map(n => n.id);
-      const merged = Array.from(new Set([...savedReadIds, ...allIds]));
-      localStorage.setItem('app_read_notifications', JSON.stringify(merged));
-    }
-  }, [isOpen, uniqueNotifications]);
+    if (!isOpen || uniqueNotifications.length === 0) return;
 
-  const unreadCount = uniqueNotifications.filter(n => {
-    if (n.is_read) return false;
-    if (savedReadIds.includes(n.id)) return false;
-    return true;
-  }).length;
+    const run = async () => {
+      const unread = uniqueNotifications.filter((n) => !n.is_read);
+      if (unread.length === 0) return;
+
+      const privateUnread = unread.filter((n) => n.user_id);
+      const publicUnreadIds = unread.filter((n) => !n.user_id).map((n) => n.id);
+
+      if (privateUnread.length > 0) {
+        const userIds = Array.from(
+          new Set(privateUnread.map((n) => n.user_id!).filter(Boolean))
+        );
+        for (const uid of userIds) {
+          await markAllNotificationsForUserRead(uid);
+        }
+      }
+      if (publicUnreadIds.length > 0 && onMarkAllPublicRead) {
+        onMarkAllPublicRead(publicUnreadIds);
+      }
+      onRefresh();
+    };
+
+    run();
+}, [isOpen]);
+
+  const unreadCount = uniqueNotifications.filter((n) => !n.is_read).length;
 
   return (
     <AnimatePresence>
