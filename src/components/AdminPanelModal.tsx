@@ -8,6 +8,17 @@ import { AdminRulesPanel } from './AdminRulesPanel';
 import { AdminPlayersHub } from './AdminPlayersHub';
 import { PubgSeatGrid } from './PubgSeatGrid';
 import { ChatMessage } from '../types';
+// Safe Push Notification Helper
+const sendPushNotification = (payload: any) => {
+  fetch('https://rsqakcncemlkscobizcr.supabase.co/functions/v1/send-push', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer sb_publishable_uo4Pa8vev48bV3KP75rr8A_G-_72OvB'
+    },
+    body: JSON.stringify(payload)
+  }).catch(err => console.log("Push failed silently:", err));
+};
 
 interface AdminPanelModalProps {
   isOpen: boolean;
@@ -295,6 +306,14 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
       if (onDataRefresh) {
         onDataRefresh();
       }
+      // Transaction Approve Notification Call
+sendPushNotification({
+  target_type: 'single_user',
+  transaction_id: txId,
+  title: 'Transaction Approved ✅',
+  message: 'Aapki deposit/withdrawal request approve ho gayi hai!'
+});
+
       // Re-fetch only if needed
       if (activeTab === 'deposits') fetchPendingDepositRequests();
       if (activeTab === 'withdrawals') fetchPendingWithdrawalRequests();
@@ -865,7 +884,13 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
       loadBansList();
     }
   }, [activeTab]);
+const pendingDepositTransactions = Array.isArray(realtimeDepositRequests) && realtimeDepositRequests.length > 0
+    ? realtimeDepositRequests
+    : (Array.isArray(transactions) ? transactions.filter((t) => t && t.type === 'deposit' && t.status === 'pending') : []);
 
+  const pendingWithdrawalTransactions = Array.isArray(realtimeWithdrawalRequests) && realtimeWithdrawalRequests.length > 0
+    ? realtimeWithdrawalRequests
+    : (Array.isArray(transactions) ? transactions.filter((t) => t && t.type === 'withdrawal' && t.status === 'pending') : []);
   const pendingDepositsCount = Array.isArray(realtimeDepositRequests) && realtimeDepositRequests.length > 0
     ? realtimeDepositRequests.length
     : (Array.isArray(transactions) ? transactions.filter(t => t && t.type === 'deposit' && t.status === 'pending').length : 0);
@@ -1765,20 +1790,51 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
       loadDraftResults(resultMatchId);
     }
   }, [resultMatchId, activeTab]);
+  
 
-              return (
-                <div key={idx} className="p-3 rounded-xl bg-[#020710]/80 border border-gray-800 flex-col justify-between">
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-center pb-1.5 border-b border-gray-800/60">
-                      <p className="text-[10px] font-black text-amber-400 uppercase tracking-wider">
-                        Match #{idx + 1} Map
-                      </p>
+  const renderThumbnailSelector = (isEditMode: boolean) => {
+    const count = type === 'tournament' ? Math.max(1, Math.min(6, tournamentMatchCount)) : 1;
+    const items = Array.from({ length: count }, (_, idx) => idx);
+
+    return (
+      <div className="space-y-3 bg-[#030a16] p-3 rounded-xl border border-gray-800 my-2">
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <h4 className="text-xs font-black text-white uppercase tracking-wider">
+              {type === 'tournament' ? 'MATCH MAP THUMBNAILS' : 'MATCH THUMBNAIL'}
+            </h4>
+            <p className="text-[9px] text-gray-500 mt-0.5">
+              Upload clear JPG/PNG images to Supabase Storage. Recommended 16:9 landscape.
+            </p>
+          </div>
+          {isEditMode && editingMatch && (
+            <span className="text-[9px] px-2 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/30 font-bold">
+              EDIT MODE
+            </span>
+          )}
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+          {items.map((idx) => {
+            const mapName = type === 'tournament' ? (tournamentMaps[idx] || `Match ${idx + 1}`) : map;
+            const currentBanner = type === 'tournament' ? (mapBanners[idx] || '') : bannerUrl;
+            const uploading = type === 'tournament' ? Boolean(isUploadingMapBanner[idx]) : isUploadingBanner;
+
+            return (
+              <div key={idx} className="p-3 rounded-xl bg-[#020710]/80 border border-gray-800 flex flex-col justify-between">
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center pb-1.5 border-b border-gray-800/60">
+                    <p className="text-[10px] font-black text-amber-400 uppercase tracking-wider">
+                      {type === 'tournament' ? `Match #${idx + 1} Map` : 'Match Thumbnail'}
+                    </p>
+                    {type === 'tournament' && (
                       <span className="px-1.5 py-0.5 bg-gray-800/80 text-[8px] text-gray-400 font-bold rounded">
-                        Active Map
+                        {mapName}
                       </span>
-                    </div>
+                    )}
+                  </div>
 
-                    {/* Map Picker Selection for each slot */}
+                  {type === 'tournament' && (
                     <div>
                       <label className="text-[9px] font-bold text-gray-400 block mb-1">Select Map</label>
                       <select
@@ -1789,9 +1845,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                           updated[idx] = e.target.value;
                           setTournamentMaps(updated);
                         }}
-                        className={`w-full p-1.5 rounded bg-[#030a16] border text-[10px] focus:outline-none focus:border-[#00e5ff] ${
-                          isAnyUploading ? 'border-gray-900 text-gray-500 cursor-not-allowed' : 'border-gray-800 text-white'
-                        }`}
+                        className="w-full p-1.5 rounded bg-[#030a16] border border-gray-800 text-white text-[10px] focus:outline-none focus:border-[#00e5ff]"
                       >
                         <option value="Erangel">Erangel</option>
                         <option value="Miramar">Miramar</option>
@@ -1804,7 +1858,9 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                         <option value="Vikendi">Vikendi</option>
                       </select>
                     </div>
+                  )}
 
+                  {type === 'tournament' && (
                     <div>
                       <label className="text-[9px] font-bold text-gray-400 block mb-1">Max Slots ({mapName})</label>
                       <input
@@ -1816,89 +1872,98 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                           updated[idx] = Number(e.target.value);
                           setMapMaxSlots(updated);
                         }}
-                        className={`w-full p-1.5 rounded bg-[#030a16] border text-[10px] text-center ${
-                          isAnyUploading ? 'border-gray-900 text-gray-500 cursor-not-allowed' : 'border-gray-800 text-white'
-                        }`}
+                        className="w-full p-1.5 rounded bg-[#030a16] border border-gray-800 text-white text-[10px] text-center"
                       />
                     </div>
+                  )}
 
-                    <div>
-                      <label className="text-[9px] font-bold text-gray-400 block mb-1">Thumbnail Source</label>
-                      <label className={`cursor-pointer py-1.5 px-2 rounded-lg font-bold border text-[10px] flex items-center justify-center gap-1 transition-all ${
-                        isUploadingMapBanner[idx]
-                          ? 'bg-gray-800 text-gray-400 cursor-not-allowed border-gray-700'
-                          : (isAnyUploading
-                              ? 'bg-gray-800/40 text-gray-500 cursor-not-allowed border-gray-800'
-                              : 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border-amber-500/30')
-                      }`}>
-                        <span>{isUploadingMapBanner[idx] ? '⏳ Uploading...' : `📁 Device Upload`}</span>
-                        <input
-                          type="file"
-                          accept="image/*"
-                          disabled={isAnyUploading}
-                          className="hidden"
-                          onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (file) {
-                              handleImageUpload(file, (url) => {
-                                const updated = [...mapBanners];
-                                updated[idx] = url;
-                                setMapBanners(updated);
-                              }, idx);
-                            }
-                            e.target.value = '';
-                          }}
-                        />
-                      </label>
-                    </div>
-
-                    {/* Manual URL Input */}
+                  <label className={`cursor-pointer py-2 px-2 rounded-lg font-bold border text-[10px] flex items-center justify-center gap-1 transition-all ${
+                    uploading || isAnyUploading
+                      ? 'bg-gray-800 text-gray-500 cursor-not-allowed border-gray-800'
+                      : 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border-amber-500/30'
+                  }`}>
+                    <span>{uploading ? '⏳ Uploading...' : '📁 Device / Gallery Upload'}</span>
                     <input
-                      type="text"
-                      disabled={isAnyUploading}
-                      placeholder="Or image URL..."
-                      value={currentBanner}
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      disabled={uploading || isAnyUploading}
+                      className="hidden"
                       onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          if (type === 'tournament') {
+                            handleImageUpload(file, (url) => {
+                              const updated = [...mapBanners];
+                              updated[idx] = url;
+                              setMapBanners(updated);
+                            }, idx);
+                          } else {
+                            handleImageUpload(file, (url) => setBannerUrl(url));
+                          }
+                        }
+                        e.target.value = '';
+                      }}
+                    />
+                  </label>
+
+                  <input
+                    type="text"
+                    disabled={isAnyUploading}
+                    placeholder="Or paste image URL..."
+                    value={currentBanner}
+                    onChange={(e) => {
+                      if (type === 'tournament') {
                         const updated = [...mapBanners];
                         updated[idx] = e.target.value;
                         setMapBanners(updated);
-                      }}
-                      className={`w-full p-1.5 rounded bg-[#030a16] border text-[10px] placeholder:text-gray-600 focus:border-[#00e5ff] outline-none ${
-                        isAnyUploading ? 'border-gray-900 text-gray-500 cursor-not-allowed' : 'border-gray-800 text-white'
-                      }`}
-                    />
-                  </div>
+                      } else {
+                        setBannerUrl(e.target.value);
+                      }
+                    }}
+                    className="w-full p-1.5 rounded bg-[#030a16] border border-gray-800 text-[10px] text-white placeholder:text-gray-600 focus:border-[#00e5ff] outline-none"
+                  />
+                </div>
 
-                  {/* Thumbnail Preview */}
-                  {currentBanner && (
-                    <div className="relative rounded-lg overflow-hidden border border-amber-500/30 bg-black/40 h-16 flex items-center justify-center mt-2">
+                {currentBanner && (
+                  <div className="relative rounded-xl overflow-visible mt-2 border-2 border-cyan-400/70 bg-[#020710] shadow-[0_0_8px_rgba(34,211,238,0.45),0_0_22px_rgba(0,229,255,0.18)] p-0.5">
+                    <div className="relative rounded-[10px] overflow-hidden bg-black aspect-video">
                       <img
                         src={currentBanner}
                         alt={`${mapName} Preview`}
-                        className="w-full h-full object-cover"
+                        className="w-full h-full object-cover block"
                         referrerPolicy="no-referrer"
                       />
+                      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/25 via-transparent to-white/5" />
+                      <span className="absolute left-2 bottom-2 px-2 py-0.5 rounded bg-black/75 text-[8px] font-black text-cyan-300 border border-cyan-400/40 tracking-wider">
+                        VIP HD PREVIEW
+                      </span>
                       <button
                         type="button"
                         onClick={() => {
-                          const updated = [...mapBanners];
-                          updated[idx] = '';
-                          setMapBanners(updated);
+                          if (type === 'tournament') {
+                            const updated = [...mapBanners];
+                            updated[idx] = '';
+                            setMapBanners(updated);
+                          } else {
+                            setBannerUrl('');
+                          }
                         }}
-                        className="absolute top-1 right-1 p-0.5 rounded-full bg-red-600 hover:bg-red-500 text-white shadow-md transition-all"
+                        className="absolute top-1.5 right-1.5 p-1 rounded-full bg-red-600/90 hover:bg-red-500 text-white shadow-lg border border-red-300/30"
+                        title="Remove image"
                       >
                         <X className="w-2.5 h-2.5" />
                       </button>
                     </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
-      );
-    }
+      </div>
+    );
   };
+
 
   if (!isOpen) return null;
 
@@ -2409,6 +2474,13 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
         0,
         override
       );
+      sendPushNotification({
+  target_type: 'topic',
+  topic: selectedMatchId,
+  title: 'Room Details Released 🎮',
+  message: `Room ID: ${firstValid?.room_id || ''} | Pass: ${firstValid?.room_password || ''}`
+});
+
     } else {
       // Force-capture inputs from state
       const currentRoomId = roomId.trim();
@@ -3130,7 +3202,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-0 md:p-4 lg:p-6 w-full h-screen overflow-hidden animate-in fade-in duration-200">
-      <div className="w-full h-full md:max-h-[92vh] md:rounded-2xl max-w-4xl lg:max-w-5xl xl:max-w-6xl mx-auto bg-[#040e1a] flex-1 flex flex-col overflow-hidden border border-[#00e5ff]/20 relative shadow-2xl">
+      <div className="w-full h-[100dvh] max-h-[100dvh] md:h-full md:max-h-[92vh] md:rounded-2xl max-w-4xl lg:max-w-5xl xl:max-w-6xl mx-auto bg-[#040e1a] flex-1 flex flex-col overflow-hidden border border-[#00e5ff]/20 relative shadow-2xl">
         
         {/* Header Bar */}
         <div className="p-4 bg-gradient-to-r from-[#07192e] via-[#030a16] to-[#07192e] border-b border-[#00e5ff]/30 flex justify-between items-center">
@@ -3398,7 +3470,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
         </div>
 
         {/* Modal Body */}
-        <div className="p-4 overflow-y-auto flex-1 space-y-4">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 pb-24 space-y-4">
           
           {/* TAB 0: PLAYER MONITORING & ACTIVITY HUB */}
           {activeTab === 'players_hub' && (
@@ -5779,17 +5851,19 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                 </div>
               </div>
 
-              <button
-                type="submit"
-                disabled={isCreatingMatch || isUploadingBanner || isUploadingMapBanner.some(Boolean)}
-                className="w-full py-3 rounded-xl bg-gradient-to-r from-[#00e5ff] to-[#0088ff] text-[#030a16] font-black text-xs tracking-wider shadow-lg shadow-[#00e5ff]/20 hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-              >
+              <div className="sticky bottom-0 z-20 -mx-1 pt-2 pb-1 bg-gradient-to-t from-[#040e1a] via-[#040e1a]/95 to-transparent">
+                <button
+                  type="submit"
+                  disabled={isCreatingMatch || isUploadingBanner || isUploadingMapBanner.some(Boolean)}
+                  className="w-full py-3.5 rounded-xl bg-gradient-to-r from-[#00e5ff] to-[#0088ff] text-[#030a16] font-black text-xs tracking-wider shadow-[0_0_18px_rgba(0,229,255,0.28)] hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 border border-cyan-300/30"
+                >
                 {isCreatingMatch
                   ? 'PUBLISHING...'
                   : (isUploadingBanner || isUploadingMapBanner.some(Boolean))
                   ? '⏳ UPLOADING IMAGE...'
                   : 'CREATE & LAUNCH MATCH'}
-              </button>
+                </button>
+              </div>
             </form>
           )}
 
