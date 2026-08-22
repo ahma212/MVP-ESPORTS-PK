@@ -3135,7 +3135,7 @@ localStorage.removeItem('app_hidden_notifications'); */
               onOpenProfile={() => setActiveBottomTab('profile')}
               onOpenAdmin={handleOpenAdmin}
               onOpenSupport={() => setIsSupportOpen(true)}
-              const handleLogout={handleLogout}
+              onLogout={handleLogout}
               onNavigateTab={(tab) => setActiveBottomTab(tab)}
               isDemoMode={isDemo}
               onOpenAnnouncements={() => setIsAnnouncementsOpen(true)}
