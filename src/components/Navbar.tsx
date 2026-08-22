@@ -46,8 +46,27 @@ export const Navbar: React.FC<NavbarProps> = ({
   const [isRulesModalOpen, setIsRulesModalOpen] = useState(false);
   const [isNotificationModalOpen, setIsNotificationModalOpen] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [hiddenPublicIds, setHiddenPublicIds] = useState<string[]>([]);
-  const [readPublicIds, setReadPublicIds] = useState<string[]>([]);
+  const [hiddenPublicIds, setHiddenPublicIds] = useState<string[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('app_hidden_notifications') || '[]');
+    } catch {
+      return [];
+    }
+  });
+  const [readPublicIds, setReadPublicIds] = useState<string[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('app_read_notifications') || '[]');
+    } catch {
+      return [];
+    }
+  });
+  useEffect(() => {
+    localStorage.setItem('app_read_notifications', JSON.stringify(readPublicIds));
+  }, [readPublicIds]);
+
+  useEffect(() => {
+    localStorage.setItem('app_hidden_notifications', JSON.stringify(hiddenPublicIds));
+  }, [hiddenPublicIds]);NotificationModal
   const [socialUnreadCount, setSocialUnreadCount] = useState<number>(0);
 
   const loadSocialUnreadCount = async () => {
