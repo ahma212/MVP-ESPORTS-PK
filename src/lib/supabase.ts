@@ -324,9 +324,23 @@ export let _matchResultsCache: MatchResult[] = [];
 export function getMatchResults(): MatchResult[] {
   return _matchResultsCache;
 }
-
 export async function syncProfilesFromMatchResult(matchRes: MatchResult) {
   if (!matchRes.results || matchRes.results.length === 0) return;
+
+  // Practice matches (TDM / WOW / Warehouse) — sirf results mein rahen, profile stats mat add karo
+  const practiceTypes = ['tdm', 'wow'];
+  const practiceMaps = ['warehouse', 'wow'];
+  const matchType = String(matchRes.match_type || '').toLowerCase();
+  const matchMap = String(matchRes.map || '').toLowerCase();
+
+  if (practiceTypes.includes(matchType) || practiceMaps.includes(matchMap)) {
+    console.log(
+      '[syncProfilesFromMatchResult] Skipped profile stats for practice match:',
+      matchRes.match_type,
+      matchRes.map
+    );
+    return;
+  }
 
   let supaProfiles: UserProfile[] = [];
   if (isSupabaseConfigured() && supabase) {
@@ -347,61 +361,49 @@ export async function syncProfilesFromMatchResult(matchRes: MatchResult) {
   let activeProfUpdated = false;
 
   // Calculate matches count to increment (1 for single match, or N for multi-map tournaments)
-  const matchesToIncrement = matchRes.tournament_matches_count && matchRes.tournament_matches_count > 0
-    ? matchRes.tournament_matches_count
-    : (matchRes.match_type === 'tournament' ? 3 : 1);
+  const matchesToIncrement =
+    matchRes.tournament_matches_count && matchRes.tournament_matches_count > 0
+      ? matchRes.tournament_matches_count
+      : matchRes.match_type === 'tournament'
+        ? 3
+        : 1;
 
-  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const uuidRegex =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
   for (const pRes of matchRes.results) {
     const killsToAdd = Number(pRes.kills) || 0;
-    const isWin = Boolean(pRes.is_winner);
+    const isWin = Boolean(pRes.is_winner || pRes.is_win);
 
     const cleanIgn = pRes.player_ign ? pRes.player_ign.trim().toLowerCase() : '';
-    const cleanUsername = pRes.username ? pRes.username.replace('@', '').trim().toLowerCase() : '';
+    const cleanUsername = pRes.username
+      ? pRes.username.replace('@', '').trim().toLowerCase()
+      : '';
 
-    // If no username and no user_id, skip profile update (guest / non-platform player)
+    // Guest / non-platform player — skip
     if (!cleanUsername && !pRes.user_id) {
       continue;
     }
 
-    // Match registered user in profiles
     const matchedProf = allProfs.find((p) => {
       if (pRes.user_id && p.id === pRes.user_id && uuidRegex.test(p.id)) return true;
       if (cleanUsername && p.username?.toLowerCase() === cleanUsername) return true;
-      if (cleanIgn && (p.pubg_id_name?.toLowerCase() === cleanIgn || p.username?.toLowerCase() === cleanIgn)) return true;
+      if (
+        cleanIgn &&
+        (p.pubg_id_name?.toLowerCase() === cleanIgn ||
+          p.username?.toLowerCase() === cleanIgn)
+      )
+        return true;
       return false;
     });
 
     if (matchedProf) {
-      // Extract prize amount if player/team got prize
-      let prizeToAdd = 0;
-      if (pRes.winning_prize !== undefined && pRes.winning_prize !== null && pRes.winning_prize !== '') {
-        const parsed = typeof pRes.winning_prize === 'number'
-          ? pRes.winning_prize
-          : parseFloat(String(pRes.winning_prize).replace(/[^0-9.]/g, ''));
-        if (!isNaN(parsed) && parsed > 0) prizeToAdd = parsed;
-      } else if ((pRes as any).earnings) {
-        const parsed = Number((pRes as any).earnings);
-        if (!isNaN(parsed) && parsed > 0) prizeToAdd = parsed;
-      }
-
-      if (prizeToAdd === 0 && matchRes.team_prizes && pRes.team_name) {
-        const teamPrizeVal = matchRes.team_prizes[pRes.team_name] || matchRes.team_prizes[`slot_${pRes.slot_number}`];
-        if (teamPrizeVal) {
-          const parsed = typeof teamPrizeVal === 'number' ? teamPrizeVal : parseFloat(String(teamPrizeVal).replace(/[^0-9.]/g, ''));
-          if (!isNaN(parsed) && parsed > 0) prizeToAdd = parsed;
-        }
-      }
-
-      // Update stats on profile:
-      // 1) total_kills = total_kills + kills from result
-      // 2) matches_played / total_matches = matches_played + (1 for single match, OR number of maps in tournament)
-      // 3) total_wins = total_wins + 1 ONLY if WIN selected
-      // 4) total_earnings = total_earnings + prize amount if won prize
-      const currentMatches = (matchedProf as any).matches_played !== undefined
-        ? Number((matchedProf as any).matches_played)
-        : (Number(matchedProf.total_matches) || 0);
+      // Stats ONLY — matches, kills, wins
+      // Reward / total_earnings / wallet — NEVER auto-add (admin manually adds reward)
+      const currentMatches =
+        (matchedProf as any).matches_played !== undefined
+          ? Number((matchedProf as any).matches_played)
+          : Number(matchedProf.total_matches) || 0;
       const newMatches = currentMatches + matchesToIncrement;
 
       const currentKills = Number(matchedProf.total_kills) || 0;
@@ -410,32 +412,27 @@ export async function syncProfilesFromMatchResult(matchRes: MatchResult) {
       const currentWins = Number(matchedProf.total_wins) || 0;
       const newWins = isWin ? currentWins + 1 : currentWins;
 
-      const currentEarnings = Number((matchedProf as any).total_earnings || 0);
-      const newEarnings = currentEarnings + prizeToAdd;
-
       matchedProf.total_matches = newMatches;
       (matchedProf as any).matches_played = newMatches;
       matchedProf.total_kills = newKills;
       matchedProf.total_wins = newWins;
-      (matchedProf as any).total_earnings = newEarnings;
 
-      // CRITICAL SECURITY MANDATE: Match Result submissions MUST NEVER modify, add, or deduct wallet_balance!
+      // CRITICAL: Match results MUST NEVER touch wallet_balance or auto-add rewards
 
       if (
         activeProf &&
         (activeProf.id === matchedProf.id ||
           activeProf.username?.toLowerCase() === matchedProf.username?.toLowerCase() ||
-          activeProf.pubg_id_name?.toLowerCase() === matchedProf.pubg_id_name?.toLowerCase())
+          activeProf.pubg_id_name?.toLowerCase() ===
+            matchedProf.pubg_id_name?.toLowerCase())
       ) {
         activeProf.total_matches = newMatches;
         (activeProf as any).matches_played = newMatches;
         activeProf.total_kills = newKills;
         activeProf.total_wins = newWins;
-        (activeProf as any).total_earnings = newEarnings;
         activeProfUpdated = true;
       }
 
-      // Update Supabase permanently for this profile
       if (isSupabaseConfigured() && supabase) {
         try {
           const updatePayload: any = {
@@ -443,7 +440,7 @@ export async function syncProfilesFromMatchResult(matchRes: MatchResult) {
             matches_played: newMatches,
             total_kills: newKills,
             total_wins: newWins,
-            total_earnings: newEarnings
+            // total_earnings intentionally NOT updated
           };
 
           if (matchedProf.id && uuidRegex.test(matchedProf.id)) {
@@ -453,9 +450,15 @@ export async function syncProfilesFromMatchResult(matchRes: MatchResult) {
               .eq('id', matchedProf.id);
 
             if (idErr) {
-              console.warn(`Update by id ${matchedProf.id} failed, trying username:`, idErr);
+              console.warn(
+                `Update by id ${matchedProf.id} failed, trying username:`,
+                idErr
+              );
               if (matchedProf.username) {
-                await supabase.from('profiles').update(updatePayload).eq('username', matchedProf.username);
+                await supabase
+                  .from('profiles')
+                  .update(updatePayload)
+                  .eq('username', matchedProf.username);
               }
             }
           } else if (matchedProf.username) {
@@ -465,42 +468,47 @@ export async function syncProfilesFromMatchResult(matchRes: MatchResult) {
               .eq('username', matchedProf.username);
           }
 
-          // Trigger private notifications for ranking achievements
+          // Ranking achievement notifications (classic matches only — already filtered above)
           try {
             const pRank = Number(pRes.rank ?? 0);
             const isWinner = Boolean(pRes.is_winner || pRes.is_win || pRank === 1);
-            
+
             if (isWinner) {
               await createNotification({
                 user_id: matchedProf.id,
-                title: "🏆 Champion Spot!",
+                title: '🏆 Champion Spot!',
                 message: `🥇 Incredible! You secured Rank 1 / Winner position in "${matchRes.match_title}"!`,
                 is_read: false,
-                type: 'announcement'
+                type: 'announcement',
               });
             } else if (pRank > 1 && pRank <= 3) {
               await createNotification({
                 user_id: matchedProf.id,
-                title: "🥈 Top 3 Finish!",
-                message: `🔥 Amazing play! You secured Rank ${pRank} (Top 3) in "${matchRes.match_title}"!`,
+                title: '🥈 Top 3 Finish!',
+                message: `🔥 Amazing play! You secured Rank \( {pRank} (Top 3) in " \){matchRes.match_title}"!`,
                 is_read: false,
-                type: 'announcement'
+                type: 'announcement',
               });
             } else if (pRank > 3 && pRank <= 10) {
               await createNotification({
                 user_id: matchedProf.id,
-                title: "⭐ Top 10 Finisher",
-                message: `💪 Great effort! You achieved Rank ${pRank} (Top 10) in "${matchRes.match_title}"!`,
+                title: '⭐ Top 10 Finisher',
+                message: `💪 Great effort! You achieved Rank \( {pRank} (Top 10) in " \){matchRes.match_title}"!`,
                 is_read: false,
-                type: 'announcement'
+                type: 'announcement',
               });
             }
           } catch (notifErr) {
-            console.warn('Failed to dispatch ranking achievement notification:', notifErr);
+            console.warn(
+              'Failed to dispatch ranking achievement notification:',
+              notifErr
+            );
           }
-
         } catch (supabaseErr) {
-          console.error('[SYNC ERROR] Failed to push stats update to Supabase:', supabaseErr);
+          console.error(
+            '[SYNC ERROR] Failed to push stats update to Supabase:',
+            supabaseErr
+          );
         }
       }
     }
@@ -511,7 +519,6 @@ export async function syncProfilesFromMatchResult(matchRes: MatchResult) {
     saveLocalProfile(activeProf);
   }
 }
-
 export async function saveMatchResult(result: MatchResult) {
   const existingIndex = _matchResultsCache.findIndex(r => r.match_id === result.match_id);
   if (existingIndex >= 0) {
