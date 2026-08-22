@@ -506,14 +506,16 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </button>
               )}
 <button
-  onClick={() => handleNavClick(onLogout)}
+  onClick={() => {
+    onLogout();
+    setIsDrawerOpen(false);
+  }}
   className="w-full py-2.5 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 hover:bg-red-500/20 text-xs font-bold flex items-center justify-center gap-2 transition-all"
 >
   <LogOut className="w-4 h-4 text-red-400" />
   <span>Logout Account</span>
 </button>
-            </div>
-
+   </div>
           </div>
         </div>
       )}
