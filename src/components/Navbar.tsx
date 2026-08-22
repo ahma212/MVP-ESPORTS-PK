@@ -507,6 +507,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               )}
 <button
   onClick={() => {
+    alert('Logout clicked!');
     onLogout();
     setIsDrawerOpen(false);
   }}
