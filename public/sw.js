@@ -22,12 +22,12 @@ self.addEventListener('fetch', (event) => {
 // ADDED: VIP Push Notification Listeners
 // ==========================================
 self.addEventListener('push', (event) => {
-  let data = { 
-    title: '👑 MVP ESPORTS VIP', 
-    body: 'Aapke paas ek naya VIP notification aaya hai!', 
-    url: '/' 
+  let data = {
+    title: 'MVP ESPORTS',
+    body: 'Aapke paas ek naya notification aaya hai!',
+    url: '/'
   };
-  
+
   if (event.data) {
     try {
       data = event.data.json();
@@ -37,23 +37,32 @@ self.addEventListener('push', (event) => {
   }
 
   const options = {
-    body: data.body,
-    icon: data.icon || '/icon-192.png',
-    badge: data.badge || '/icon-192-maskable.png',
-    image: data.image || null,
-    vibrate: [200, 100, 200, 100, 200],
-    tag: 'vip-notification',
+    body: data.body || 'New notification',
+    icon: 'https://mvpesports.online/icon-192.png',
+    badge: 'https://mvpesports.online/icon-192-maskable.png',
+    image: data.image || undefined,
+    vibrate: [300, 100, 300, 100, 300],
+    tag: 'mvp-esports-' + Date.now(),
     renotify: true,
-    data: { url: data.url || '/' }
+    requireInteraction: true,
+    silent: false,
+    data: { url: data.url || '/' },
+    actions: [
+      { action: 'open', title: 'Open App' },
+      { action: 'close', title: 'Close' }
+    ]
   };
 
   event.waitUntil(
-    self.registration.showNotification(data.title || '👑 MVP ESPORTS VIP', options)
+    self.registration.showNotification(data.title || 'MVP ESPORTS', options)
   );
 });
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
+
+  if (event.action === 'close') return;
+
   const targetUrl = event.notification.data?.url || '/';
 
   event.waitUntil(
