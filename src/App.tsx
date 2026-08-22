@@ -1727,6 +1727,8 @@ export default function App() {
     setActiveBottomTab('home');
     setSearchQuery('');
     setMatchTab('all');
+    localStorage.removeItem('app_read_notifications');
+  localStorage.removeItem('app_hidden_notifications');
     if (isSupabaseConfigured() && supabase) {
       supabase.auth.signOut().catch(err => console.warn("Supabase signout notice:", err));
     }
@@ -3132,7 +3134,7 @@ export default function App() {
               onOpenProfile={() => setActiveBottomTab('profile')}
               onOpenAdmin={handleOpenAdmin}
               onOpenSupport={() => setIsSupportOpen(true)}
-              onLogout={handleLogout}
+              const handleLogout={handleLogout}
               onNavigateTab={(tab) => setActiveBottomTab(tab)}
               isDemoMode={isDemo}
               onOpenAnnouncements={() => setIsAnnouncementsOpen(true)}
