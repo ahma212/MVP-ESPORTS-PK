@@ -5,7 +5,8 @@ import type { Notification } from '../types';
 import { markNotificationRead, markAllNotificationsForUserRead, deleteNotification, supabase } from '../lib/supabase';
 
 // Sahi VAPID Public Key
-const PUBLIC_VAPID_KEY = 'BBTrZfhNIUGcra1UA6svAzlOUTFgTFb-Y5cEoAt3QRa6JTPh8bnqUDh_y-GsjiP_ITENu6UR-iNmmcPPelzlgJU';
+const PUBLIC_VAPID_KEY =
+  'BNV-wpFWCVbRfyTYJi-1Q3Iq5OL6zYahjmzVy5O89Ogd1ga739ng8RC2nHeoTb3u4L0r3YPULxUOUuab9nMfdHM';
 
 // Helper function - VAPID key ko Uint8Array mein convert karta hai
 function urlBase64ToUint8Array(base64String: string) {
