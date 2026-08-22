@@ -1966,7 +1966,7 @@ const pendingDepositTransactions = Array.isArray(realtimeDepositRequests) && rea
 
 
   if (!isOpen) return null;
-
+  
   const auditLogs = transactions.filter((t) => t.status !== 'pending');
 
   // Refresh active match maps
