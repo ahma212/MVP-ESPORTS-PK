@@ -1230,7 +1230,9 @@ export default function App() {
             return;
           }
         }
-
+if (onlineChannel) {
+          supabase?.removeChannel(onlineChannel);
+        }
         // 3. Check for Rejection Alert
         const requests = await getDeletionRequests();
         const rejected = requests.find(r => r.user_id === userProfile.id && r.status === 'rejected');
@@ -1247,7 +1249,28 @@ export default function App() {
       const presenceTimer = setInterval(() => {
         updateUserPresence(userProfile.id);
       }, 25000);
-
+// Realtime Presence — Admin hub Online Now
+      let onlineChannel: any = null;
+      if (isSupabaseConfigured() && supabase) {
+        try {
+          onlineChannel = supabase.channel('online-users', {
+            config: { presence: { key: userProfile.id } },
+          });
+          onlineChannel.subscribe(async (status: string) => {
+            if (status === 'SUBSCRIBED') {
+              await onlineChannel.track({
+                user_id: userProfile.id,
+                id: userProfile.id,
+                username: userProfile.username,
+                name: userProfile.name,
+                online_at: new Date().toISOString(),
+              });
+            }
+          });
+        } catch (err) {
+          console.warn('Online presence track error:', err);
+        }
+      }
       // Realtime subscription for this user's profile row
       let profileChannel: any = null;
       if (isSupabaseConfigured() && supabase) {
@@ -1310,6 +1333,9 @@ export default function App() {
       return () => {
         window.removeEventListener('storage', checkStatus);
         clearInterval(presenceTimer);
+        if (onlineChannel) {
+          supabase?.removeChannel(onlineChannel);
+        }
         if (profileChannel) {
           supabase?.removeChannel(profileChannel);
         }
