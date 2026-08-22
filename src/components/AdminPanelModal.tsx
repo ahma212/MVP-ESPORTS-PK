@@ -5844,7 +5844,7 @@ const pendingDepositTransactions = Array.isArray(realtimeDepositRequests) && rea
                 </div>
               </div>
 
-              <div className="sticky bottom-0 z-20 -mx-1 pt-2 pb-1 bg-gradient-to-t from-[#040e1a] via-[#040e1a]/95 to-transparent">
+             className="mt-4 pt-3 pb-6 border-t border-[#00e5ff]/15"
                 <button
                   type="submit"
                   disabled={isCreatingMatch || isUploadingBanner || isUploadingMapBanner.some(Boolean)}
