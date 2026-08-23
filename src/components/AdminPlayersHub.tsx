@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+// Connect Supabase Realtime Presence channelimport React, { useState, useEffect } from 'react';
 import { UserProfile } from '../types';
 import { supabase, isSupabaseConfigured, getAllProfiles } from '../lib/supabase';
 import { Users, Search, Activity, Sparkles, Copy, Check, ShieldAlert, Award, RefreshCw, Mail, Calendar, CircleDot } from 'lucide-react';
@@ -79,9 +79,10 @@ export const AdminPlayersHub: React.FC<AdminPlayersHubProps> = ({
   }, [searchQuery]);
 
   useEffect(() => {
-    // 3. REALTIME SYNC
+    // 3. REALTIME SYNC + Online from last_seen
     let profilesSubscription: any = null;
     let presenceChannel: any = null;
+    let onlinePoll: ReturnType<typeof setInterval> | null = null;
 
     if (isSupabaseConfigured() && supabase) {
       try {
@@ -93,59 +94,87 @@ export const AdminPlayersHub: React.FC<AdminPlayersHubProps> = ({
             { event: '*', schema: 'public', table: 'profiles' },
             (payload) => {
               const newProf = payload.new as any;
-              
+
               if (payload.eventType === 'INSERT') {
-                 setTotalPlayersCount(prev => prev + 1);
-                 setNewPlayersTodayCount(prev => prev + 1);
-                 
-                 const alertMsg = `🎉 New Player Registered: ${newProf.name || 'Gamer'} (@${newProf.username || 'unknown'})!`;
-                 setNewPlayerAlert(alertMsg);
-                 setTimeout(() => setNewPlayerAlert(null), 8000);
-                 
-                 setProfiles(prev => [newProf as UserProfile, ...prev]);
+                setTotalPlayersCount((prev) => prev + 1);
+                setNewPlayersTodayCount((prev) => prev + 1);
+
+                const alertMsg = `🎉 New Player Registered: \( {newProf.name || 'Gamer'} (@ \){newProf.username || 'unknown'})!`;
+                setNewPlayerAlert(alertMsg);
+                setTimeout(() => setNewPlayerAlert(null), 8000);
+
+                setProfiles((prev) => [newProf as UserProfile, ...prev]);
               } else if (payload.eventType === 'UPDATE') {
-                 setProfiles(prev => prev.map(p => p.id === newProf.id ? { ...p, ...newProf } as UserProfile : p));
-                 setActivePlayers(prev => prev.map(p => p.id === newProf.id ? { ...p, ...newProf } as UserProfile : p));
+                setProfiles((prev) =>
+                  prev.map((p) =>
+                    p.id === newProf.id ? ({ ...p, ...newProf } as UserProfile) : p
+                  )
+                );
+                setActivePlayers((prev) =>
+                  prev.map((p) =>
+                    p.id === newProf.id ? ({ ...p, ...newProf } as UserProfile) : p
+                  )
+                );
               }
             }
           )
           .subscribe();
 
-        // Connect Supabase Realtime Presence channel
-        presenceChannel = supabase.channel('online-users');
-        
-        presenceChannel.on('presence', { event: 'sync' }, () => {
-          const newState = presenceChannel.presenceState();
-          const uniqueIds = new Set<string>();
-          
-          Object.values(newState).forEach((presences: any) => {
-             presences.forEach((p: any) => {
-               if (p.user_id) uniqueIds.add(p.user_id);
-               if (p.id) uniqueIds.add(p.id);
-             });
-          });
-          
-          const idsArray = Array.from(uniqueIds);
-          if (idsArray.length > 0) {
-             supabase.from('profiles').select('*').in('id', idsArray).then(({ data }) => {
-               if (data) setActivePlayers(data as UserProfile[]);
-             });
-          } else {
-             setActivePlayers([]);
+        // Online = last_seen last 2 minutes mein (reliable)
+        const refreshOnline = async () => {
+          try {
+            const cutoff = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+            const { data } = await supabase
+              .from('profiles')
+              .select('*')
+              .gte('last_seen', cutoff);
+            setActivePlayers((data as UserProfile[]) || []);
+          } catch (e) {
+            console.warn('Online refresh error:', e);
           }
-        }).subscribe();
+        };
+        refreshOnline();
+        onlinePoll = setInterval(refreshOnline, 15000);
 
+        // Optional: Realtime Presence bhi
+        presenceChannel = supabase.channel('online-users');
+        presenceChannel
+          .on('presence', { event: 'sync' }, () => {
+            const newState = presenceChannel.presenceState();
+            const uniqueIds = new Set<string>();
+
+            Object.values(newState).forEach((presences: any) => {
+              (presences as any[]).forEach((p: any) => {
+                if (p.user_id) uniqueIds.add(p.user_id);
+                if (p.id) uniqueIds.add(p.id);
+              });
+            });
+
+            const idsArray = Array.from(uniqueIds);
+            if (idsArray.length > 0) {
+              supabase
+                .from('profiles')
+                .select('*')
+                .in('id', idsArray)
+                .then(({ data }) => {
+                  if (data && data.length > 0) {
+                    setActivePlayers(data as UserProfile[]);
+                  }
+                });
+            }
+          })
+          .subscribe();
       } catch (err) {
         console.error('Realtime profiles error:', err);
       }
     }
 
     return () => {
+      if (onlinePoll) clearInterval(onlinePoll);
       if (profilesSubscription) supabase?.removeChannel(profilesSubscription);
       if (presenceChannel) supabase?.removeChannel(presenceChannel);
     };
   }, []);
-
   const handleCopy = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
     setCopiedText(label);
