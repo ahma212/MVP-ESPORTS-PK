@@ -3133,8 +3133,12 @@ localStorage.removeItem('app_hidden_notifications'); */
   }
 
   return (
-    <ErrorBoundary>
-      <div className="min-h-screen bg-[#030a16] text-white flex justify-center items-start font-sans select-none antialiased">
+<ErrorBoundary>
+      <div 
+        className="min-h-screen bg-[#030a16] text-white flex justify-center items-start font-sans select-none antialiased"
+        onClick={(e) => e.stopPropagation()}
+        onTouchStart={(e) => e.stopPropagation()}
+      >
         {/* Mobile-first centered frame container */}
         <div className="w-full max-w-md md:max-w-2xl lg:max-w-4xl xl:max-w-5xl min-h-screen bg-gradient-to-b from-[#06182e] via-[#030a16] to-[#01050d] border-x border-[#00e5ff]/20 flex flex-col p-3 sm:p-4 md:p-6 relative shadow-2xl shadow-[#00e5ff]/10">
           
