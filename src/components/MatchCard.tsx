@@ -290,7 +290,7 @@ export const MatchCard: React.FC<MatchCardProps> = ({
       <div className="flex justify-between items-start gap-2 mb-2">
         <div className="flex items-center gap-1.5 flex-wrap">
           <span className={`text-[9px] font-black px-2 py-0.5 rounded border uppercase tracking-wider ${getMapBadge(match.map)}`}>
-            {match.type === 'wow' ? 'WOW' : match.squad_type}
+            {match.squad_type || 'SQUAD'}
           </span>
           {isTournament ? (
             <span className="bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[9px] font-black px-2 py-0.5 rounded uppercase flex items-center gap-1">
