@@ -108,7 +108,7 @@ export const MatchCard: React.FC<MatchCardProps> = ({
     const mins = Math.floor((totalSecs % 3600) / 60);
     const secs = totalSecs % 60;
     const pad = (n: number) => n.toString().padStart(2, '0');
-    return `\( {pad(hrs)}: \){pad(mins)}:${pad(secs)}`;
+    return `${pad(hrs)}:${pad(mins)}:${pad(secs)}`;
   };
 
   const percentageBooked = Math.round((match.booked_slots / Math.max(1, availableSlots)) * 100);
