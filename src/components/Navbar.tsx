@@ -190,7 +190,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   return (
     <>
-      <header className="sticky top-0 z-40 bg-[#030a16]/95 backdrop-blur-md border-b border-[#00e5ff]/20 px-4 py-2.5 shadow-lg shadow-[#00e5ff]/5">
+      <header className="sticky top-0 z-40 bg-[#030a16]/95 backdrop-blur-md border-b border-[#00e5ff]/20 px-4 pb-2.5 pt-[max(0.625rem,env(safe-area-inset-top))] shadow-lg shadow-[#00e5ff]/5">
         <div className="flex justify-between items-center max-w-md mx-auto">
           {/* Left: Logo & App Title */}
           <div className="flex items-center gap-2">

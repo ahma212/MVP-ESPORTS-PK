@@ -6,7 +6,6 @@ interface BottomNavProps {
   onChangeTab: (tab: 'home' | 'my-matches' | 'wallet' | 'leaderboard' | 'profile') => void;
   bookedCount: number;
 }
-
 export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onChangeTab, bookedCount }) => {
   const tabs: Array<{
     id: 'home' | 'my-matches' | 'wallet' | 'leaderboard' | 'profile';
@@ -22,7 +21,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onChangeTab, bo
   ];
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-40 bg-[#030a16]/95 backdrop-blur-md border-t border-[#00e5ff]/20 py-2 px-3 shadow-2xl">
+    <div className="fixed bottom-0 left-0 right-0 z-40 bg-[#030a16]/95 backdrop-blur-md border-t border-[#00e5ff]/20 pt-2 px-3 pb-[max(0.5rem,env(safe-area-inset-bottom))] shadow-2xl">
       <div className="max-w-md md:max-w-2xl lg:max-w-4xl xl:max-w-5xl mx-auto flex justify-around items-center">
         {tabs.map((tab) => {
           const Icon = tab.icon;
