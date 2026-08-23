@@ -1,4 +1,4 @@
-// Connect Supabase Realtime Presence channelimport React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { UserProfile } from '../types';
 import { supabase, isSupabaseConfigured, getAllProfiles } from '../lib/supabase';
 import { Users, Search, Activity, Sparkles, Copy, Check, ShieldAlert, Award, RefreshCw, Mail, Calendar, CircleDot } from 'lucide-react';
