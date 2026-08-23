@@ -1245,7 +1245,60 @@ if (onlineChannel) {
 
       checkStatus();
       updateUserPresence(userProfile.id);
+// First-open: push permission auto
+      if (
+        typeof window !== 'undefined' &&
+        'Notification' in window &&
+        'serviceWorker' in navigator &&
+        Notification.permission === 'default' &&
+        !localStorage.getItem('mvp_push_prompted')
+      ) {
+        const askPush = async () => {
+          try {
+            localStorage.setItem('mvp_push_prompted', '1');
+            const registration = await navigator.serviceWorker.register('/sw.js');
+            await navigator.serviceWorker.ready;
+            const permission = await Notification.requestPermission();
+            if (permission !== 'granted') return;
 
+            const PUBLIC_VAPID_KEY =
+              'BNV-wpFWCVbRfyTYJi-1Q3Iq5OL6zYahjmzVy5O89Ogd1ga739ng' +
+              '8RC2nHeoTb3u4L0r3YPULxUOUuab9nMfdHM';
+
+            const padding = '='.repeat((4 - (PUBLIC_VAPID_KEY.length % 4)) % 4);
+            const base64 = (PUBLIC_VAPID_KEY + padding).replace(/-/g, '+').replace(/_/g, '/');
+            const rawData = window.atob(base64);
+            const applicationServerKey = new Uint8Array(rawData.length);
+            for (let i = 0; i < rawData.length; ++i) {
+              applicationServerKey[i] = rawData.charCodeAt(i);
+            }
+
+            let subscription = await registration.pushManager.getSubscription();
+            if (!subscription) {
+              subscription = await registration.pushManager.subscribe({
+                userVisibleOnly: true,
+                applicationServerKey,
+              });
+            }
+
+            const subJson = subscription.toJSON();
+            if (subJson.endpoint && subJson.keys?.p256dh && subJson.keys?.auth && supabase) {
+              await supabase.from('push_subscriptions').upsert(
+                {
+                  user_id: userProfile.id,
+                  endpoint: subJson.endpoint,
+                  p256dh: subJson.keys.p256dh,
+                  auth: subJson.keys.auth,
+                },
+                { onConflict: 'user_id' }
+              );
+            }
+          } catch (e) {
+            console.warn('Auto push prompt error:', e);
+          }
+        };
+        setTimeout(askPush, 2500);
+      }
       const presenceTimer = setInterval(() => {
         updateUserPresence(userProfile.id);
       }, 25000);
@@ -1335,7 +1388,7 @@ if (onlineChannel) {
         clearInterval(presenceTimer);
         if (onlineChannel) {
           supabase?.removeChannel(onlineChannel);
-        }
+        }updateUserPresence(userProfile.id);
         if (profileChannel) {
           supabase?.removeChannel(profileChannel);
         }
