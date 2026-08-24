@@ -36,45 +36,35 @@ self.addEventListener('push', (event) => {
     }
   }
 
-  const options = {
-    body: data.body || 'New notification',
-    icon: 'https://mvpesports.online/icon-192.png',
-    badge: 'https://mvpesports.online/icon-192-maskable.png',
-    image: data.image || undefined,
-    vibrate: [300, 100, 300, 100, 300],
-    tag: 'mvp-esports-' + Date.now(),
-    renotify: true,
-    requireInteraction: true,
-    silent: false,
-    data: { url: data.url || '/' },
-    actions: [
-      { action: 'open', title: 'Open App' },
-      { action: 'close', title: 'Close' }
-    ]
-  };
-
-  event.waitUntil(
-    self.registration.showNotification(data.title || 'MVP ESPORTS', options)
-  );
-});
-
-self.addEventListener('notificationclick', (event) => {
-  event.notification.close();
-
-  if (event.action === 'close') return;
-
-  const targetUrl = event.notification.data?.url || '/';
-
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
-      for (let client of windowClients) {
-        if ((client.url === targetUrl || client.url.includes(targetUrl)) && 'focus' in client) {
-          return client.focus();
-        }
+      // Agar app open / focused hai to system notification mat dikhao
+      const isAppOpen = windowClients.some(
+        (c) => c.focused || (c.visibilityState && c.visibilityState === 'visible')
+      );
+      if (isAppOpen) {
+        // App ke andar already notification list update ho sakti hai
+        return;
       }
-      if (clients.openWindow) {
-        return clients.openWindow(targetUrl);
-      }
+
+      const options = {
+        body: data.body || 'New notification',
+        icon: 'https://mvpesports.online/icon-192.png',
+        badge: 'https://mvpesports.online/icon-192-maskable.png',
+        image: data.image || undefined,
+        vibrate: [200, 100, 200, 100, 200, 100, 400],
+        tag: data.tag || ('mvp-esports-' + (data.match_id || data.title || Date.now())),
+        renotify: false,
+        requireInteraction: true,
+        silent: false,
+        data: { url: data.url || '/' },
+        actions: [
+          { action: 'open', title: 'Open App' },
+          { action: 'close', title: 'Close' }
+        ]
+      };
+
+      return self.registration.showNotification(data.title || 'MVP ESPORTS', options);
     })
   );
 });

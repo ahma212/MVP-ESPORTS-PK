@@ -1753,15 +1753,6 @@ if (onlineChannel) {
           await fetchUserBookings(prof.id);
           resetUiStatesToHome();
 
-          // 2) LOGIN WELCOME BACK (private — every login)
-          createNotification({
-            user_id: prof.id,
-            title: 'Welcome Back',
-            message: 'Welcome back to MVP ESPORTS — are you ready to play?',
-            type: 'general',
-            is_read: false
-          }).catch(err => console.warn('Error creating login welcome back notification:', err));
-
           if (prof.is_admin === true) {
             showToast('Welcome back, Admin!');
           } else {
@@ -2409,8 +2400,8 @@ localStorage.removeItem('app_hidden_notifications'); */
     try {
     await createNotification({
   user_id: null,
-  title: "New Tournament Available",
-  message: `🎮 New Tournament Available! ${newMatchRaw.title} is now open for booking.`,
+  title: "👑 VIP MATCH | Naya Tournament",
+  message: `⚡ Match "${newMatchRaw.title}" abhi live hai. Apni VIP slot fast book karein!`,
   is_read: false,
   type: 'announcement',
   match_id: newMatchRaw.id,
