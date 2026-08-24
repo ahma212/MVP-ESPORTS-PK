@@ -2513,9 +2513,9 @@ localStorage.removeItem('app_hidden_notifications'); */
     // Refresh matches from Supabase immediately
     await refreshData(true, true);
 
-    // Create notifications for booked players only (fetch from Supabase — admin state may not have all bookings)
+   // Create notifications for booked players only (both booker + actual player)
     try {
-      let bookedUserIds: string[] = [];
+      let notifyUserIds: string[] = [];
 
       if (isSupabaseConfigured() && supabase) {
         const { data: matchBookings, error: bErr } = await supabase
@@ -2526,29 +2526,31 @@ localStorage.removeItem('app_hidden_notifications'); */
         if (bErr) {
           console.warn('Room notify: failed to load slot_bookings:', bErr);
         } else if (Array.isArray(matchBookings)) {
-          bookedUserIds = Array.from(
-            new Set(
-              matchBookings
-                .map((b: any) => b.user_id || b.player_id)
-                .filter((id: any) => typeof id === 'string' && id.length > 10)
-            )
-          );
+          matchBookings.forEach((b: any) => {
+            if (b.user_id && typeof b.user_id === 'string' && b.user_id.length > 10) {
+              notifyUserIds.push(b.user_id);
+            }
+            if (b.player_id && typeof b.player_id === 'string' && b.player_id.length > 10) {
+              notifyUserIds.push(b.player_id);
+            }
+          });
         }
       }
 
-      // Fallback to local state if DB returned nothing
-      if (bookedUserIds.length === 0) {
-        bookedUserIds = Array.from(
-          new Set(
-            bookings
-              .filter((b) => b.match_id === matchId)
-              .map((b) => b.user_id || (b as any).player_id)
-              .filter((id): id is string => typeof id === 'string' && id.length > 10)
-          )
-        );
+      // Fallback to local state
+      if (notifyUserIds.length === 0) {
+        bookings
+          .filter((b) => b.match_id === matchId)
+          .forEach((b) => {
+            if (b.user_id) notifyUserIds.push(b.user_id);
+            if ((b as any).player_id) notifyUserIds.push((b as any).player_id);
+          });
       }
 
-      for (const userId of bookedUserIds) {
+      // Unique IDs only
+      const uniqueUserIds = Array.from(new Set(notifyUserIds));
+
+      for (const userId of uniqueUserIds) {
         await createNotification({
           user_id: userId,
           title: 'Match Credentials Released',
@@ -2559,7 +2561,7 @@ localStorage.removeItem('app_hidden_notifications'); */
         });
       }
 
-      console.log('[Room Credentials] Notifications sent to', bookedUserIds.length, 'players');
+      console.log('[Room Credentials] Notifications sent to', uniqueUserIds.length, 'players');
     } catch (notifErr) {
       console.warn('Room credentials notification error:', notifErr);
     }
