@@ -2513,20 +2513,56 @@ localStorage.removeItem('app_hidden_notifications'); */
     // Refresh matches from Supabase immediately
     await refreshData(true, true);
 
-    // Create notifications for booked players only
-    const bookingsForMatch = bookings.filter(b => b.match_id === matchId);
-    const uniqueBookedUsers: string[] = Array.from(new Set<string>(bookingsForMatch.map(b => b.user_id)));
-    for (const userId of uniqueBookedUsers) {
-      await createNotification({
-        user_id: userId,
-        title: `Match Credentials Released`,
-        message: `🔑 Room ID & Password released for ${match.title}! Check your match card.`,
-        is_read: false,
-        type: 'match_credentials',
-        match_id: matchId
-      });
-    }
+    // Create notifications for booked players only (fetch from Supabase — admin state may not have all bookings)
+    try {
+      let bookedUserIds: string[] = [];
 
+      if (isSupabaseConfigured() && supabase) {
+        const { data: matchBookings, error: bErr } = await supabase
+          .from('slot_bookings')
+          .select('user_id, player_id')
+          .eq('match_id', matchId);
+
+        if (bErr) {
+          console.warn('Room notify: failed to load slot_bookings:', bErr);
+        } else if (Array.isArray(matchBookings)) {
+          bookedUserIds = Array.from(
+            new Set(
+              matchBookings
+                .map((b: any) => b.user_id || b.player_id)
+                .filter((id: any) => typeof id === 'string' && id.length > 10)
+            )
+          );
+        }
+      }
+
+      // Fallback to local state if DB returned nothing
+      if (bookedUserIds.length === 0) {
+        bookedUserIds = Array.from(
+          new Set(
+            bookings
+              .filter((b) => b.match_id === matchId)
+              .map((b) => b.user_id || (b as any).player_id)
+              .filter((id): id is string => typeof id === 'string' && id.length > 10)
+          )
+        );
+      }
+
+      for (const userId of bookedUserIds) {
+        await createNotification({
+          user_id: userId,
+          title: 'Match Credentials Released',
+          message: `🔑 Room ID & Password released for ${match.title}! Check your match card.`,
+          is_read: false,
+          type: 'match_credentials',
+          match_id: matchId,
+        });
+      }
+
+      console.log('[Room Credentials] Notifications sent to', bookedUserIds.length, 'players');
+    } catch (notifErr) {
+      console.warn('Room credentials notification error:', notifErr);
+    }
     showToast('Room Credentials Updated in Supabase & Dispatched!');
   };
 
