@@ -567,7 +567,7 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = ({
   return (
     <div className="fixed inset-0 pt-[env(safe-area-inset-top)] z-50 w-full h-screen bg-black/80 backdrop-blur-sm flex items-center justify-center p-0 md:p-4 lg:p-6 animate-in fade-in duration-200">
 
-      <div className="w-full h-full md:h-auto md:max-h-[92vh] md:rounded-2xl max-w-4xl mx-auto bg-[#040e1a] border border-[#00e5ff]/20 flex flex-col shadow-2xl overflow-hidden relative">
+      <div className="w-full h-full md:h-auto md:max-h-[92vh] md:rounded-2xl max-w-4xl mx-auto bg-[#040e1a] border border-[#00e5ff]/20 flex flex-col shadow-2xl overflow-hidden relative pb-[env(safe-area-inset-bottom)]">
         
         {/* Header Bar */}
         <div className="p-3 bg-gradient-to-r from-[#07192e] to-[#030a16] border-b border-[#00e5ff]/20 flex justify-between items-center">
