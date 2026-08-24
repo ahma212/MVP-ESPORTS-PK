@@ -70,7 +70,7 @@ export const PubgSeatGrid: React.FC<PubgSeatGridProps> = ({
     return map;
   }, [bookings]);
 
-  // Helper to resolve player display details
+// Helper to resolve player display details
   const getPlayerDisplay = (slotNum: number) => {
     const booking = bookingMap.get(slotNum);
     if (!booking) return null;
@@ -81,25 +81,33 @@ export const PubgSeatGrid: React.FC<PubgSeatGridProps> = ({
 
     const profilesList = (allProfiles && allProfiles.length > 0) ? allProfiles : getAllProfiles();
 
+    // Priority: player_id → user_id → player_uid → player_ign
+    const targetUserId = booking.player_id || booking.user_id;
+
     if (profilesList && profilesList.length > 0) {
       const cleanIgn = booking.player_ign?.trim().toLowerCase();
       const cleanUid = booking.player_uid?.trim();
-      const targetUserId = booking.player_id || booking.user_id;
 
-      const prof = profilesList.find((p) => {
-        if (targetUserId && p.id === targetUserId) return true;
-        if (booking.player_id && p.id === booking.player_id) return true;
-        if (booking.user_id && p.id === booking.user_id) return true;
+      // 1. Pehle exact user_id / player_id se match karo
+      let prof = profilesList.find((p) => 
+        (targetUserId && p.id === targetUserId)
+      );
 
-        if (cleanUid && p.pubg_id_number && String(p.pubg_id_number).trim() === cleanUid) return true;
+      // 2. Agar nahi mila to PUBG UID se
+      if (!prof && cleanUid) {
+        prof = profilesList.find((p) => 
+          p.pubg_id_number && String(p.pubg_id_number).trim() === cleanUid
+        );
+      }
 
-        if (cleanIgn) {
+      // 3. Last resort: player_ign se match
+      if (!prof && cleanIgn) {
+        prof = profilesList.find((p) => {
           if (p.pubg_id_name && p.pubg_id_name.trim().toLowerCase() === cleanIgn) return true;
           if (p.pubg_name && p.pubg_name.trim().toLowerCase() === cleanIgn) return true;
-          if (p.username && p.username.trim().toLowerCase() === cleanIgn) return true;
-        }
-        return false;
-      });
+          return false;
+        });
+      }
 
       if (prof) {
         matchedProfile = prof;
@@ -119,7 +127,7 @@ export const PubgSeatGrid: React.FC<PubgSeatGridProps> = ({
       Boolean(currentUserId) &&
       (booking.user_id === currentUserId || booking.player_id === currentUserId);
 
-    // 1. TOP (main title): full PUBG name / IGN (Use booking.player_ign OR profile.pubg_name)
+    // Main display name: hamesha booking.player_ign (PUBG name) priority
     const fullPubgName = booking.player_ign || matchedPubgName || matchedProfile?.name || 'Player';
 
     return {
