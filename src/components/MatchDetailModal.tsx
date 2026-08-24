@@ -971,7 +971,7 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = ({
 
                             <div
                               ref={gridContainerRef}
-                              className="max-h-72 sm:max-h-80 overflow-y-auto p-2.5 bg-[#020710] rounded-xl border border-gray-800 space-y-2.5 custom-scrollbar"
+                 className="max-h-52 sm:max-h-60 overflow-y-auto p-2.5 bg-[#020710] rounded-xl border border-gray-800 space-y-2.5 custom-scrollbar"
                             >
                               <PubgSeatGrid
                                 mode="player_select"
