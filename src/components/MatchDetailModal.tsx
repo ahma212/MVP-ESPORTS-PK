@@ -971,7 +971,7 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = ({
 
                             <div
                               ref={gridContainerRef}
-                 className="max-h-80 sm:max-h-[28rem] overflow-y-auto p-2.5 bg-[#020710] rounded-xl border border-gray-800 space-y-2.5 custom-scrollbar"
+                 className="max-h-60 sm:max-h-72 overflow-y-auto p-2.5 bg-[#020710] rounded-xl border border-gray-800 space-y-2.5 custom-scrollbar"
                             >
                               <PubgSeatGrid
                                 mode="player_select"
@@ -1026,7 +1026,7 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = ({
                             <span className="font-extrabold text-[#00e5ff]">RS. {totalCost}</span>
                           </div>
 
-                          <div className="flex gap-2 pt-1">
+                          <div className="flex gap-2 pt-2pb-4 sticky bottom-0 z-10 bg-[#040e1a]>
                             <button
                               type="button"
                               onClick={() => {
