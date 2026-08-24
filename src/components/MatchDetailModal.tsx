@@ -1092,7 +1092,7 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = ({
 
         {/* Bottom Navigation Buttons */}
         {activeSubTab === 'details' && (
-          <div className="p-4 bg-[#030a16] border-t border-gray-800/60 flex justify-end">
+          <div className="p-3 pb-5 bg-[#030a16] border-t border-gray-800/60 flex justify-end">
             {isAlreadyBooked ? (
               <button
                 type="button"
@@ -1138,7 +1138,7 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = ({
         )}
 
         {activeSubTab === 'slots' && isAlreadyBooked && (
-          <div className="p-4 bg-[#030a16] border-t border-gray-800/60 flex justify-end">
+          <div className="p-3 pb-5 bg-[#030a16] border-t border-gray-800/60 flex justify-end">
             <button
               type="button"
               onClick={() => setActiveSubTab('rules')}
@@ -1150,7 +1150,7 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = ({
         )}
 
         {activeSubTab === 'rules' && (
-          <div className="p-4 bg-[#030a16] border-t border-gray-800/60 flex justify-end">
+          <div className="p-3 pb-5 bg-[#030a16] border-t border-gray-800/60 flex justify-end">
             <button
               type="button"
               onClick={() => setActiveSubTab('details')}
