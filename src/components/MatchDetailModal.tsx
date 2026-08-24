@@ -629,7 +629,7 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = ({
         </div>
 
         {/* Modal Scroll Body */}
-        <div className="p-4 overflow-y-auto flex-1 space-y-4">
+        <div className="p-4 overflow-y-auto flex-1 min-h-0 space-y-4 pb-6">
           
           {/* TAB 1: DETAILS */}
           {activeSubTab === 'details' && (
@@ -971,7 +971,7 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = ({
 
                             <div
                               ref={gridContainerRef}
-                 className="max-h-52 sm:max-h-60 overflow-y-auto p-2.5 bg-[#020710] rounded-xl border border-gray-800 space-y-2.5 custom-scrollbar"
+                 className="max-h-80 sm:max-h-[28rem] overflow-y-auto p-2.5 bg-[#020710] rounded-xl border border-gray-800 space-y-2.5 custom-scrollbar"
                             >
                               <PubgSeatGrid
                                 mode="player_select"
@@ -1002,13 +1002,8 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = ({
                           )}
 
                           {/* INPUT FIELDS BASED ON PLAYER COUNT */}
-                          <div className="space-y-2 max-h-44 overflow-y-auto pr-1">
-                            {selectedSlots.length === 0 ? (
-                              <div className="p-3 rounded-lg border border-dashed border-gray-700 bg-[#07192e]/40 text-center text-xs text-gray-400">
-                                👈 Highlight {maxAllowedSlots > 1 ? `up to ${maxAllowedSlots}` : '1'} slot box{maxAllowedSlots > 1 ? 'es' : ''} in the grid above to assign player names.
-                              </div>
-                            ) : (
-                              selectedSlots.map((slotNum, idx) => (
+                          <div className="space-y-2 pr-1">
+                                {selectedSlots.map((slotNum, idx) => (
                                 <div key={slotNum}>
                                   <label className="text-[10px] text-gray-400 font-semibold block mb-0.5">
                                     Player {idx + 1} Name {idx === 0 ? '(Team Leader & Main)' : `(Booking Slot #${slotNum})`}
@@ -1022,8 +1017,8 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = ({
                                     required
                                   />
                                 </div>
-                              ))
-                            )}
+                        
+                           ) )}
                           </div>
 
                           <div className="flex justify-between items-center text-xs text-gray-300 pt-2 border-t border-gray-800">
