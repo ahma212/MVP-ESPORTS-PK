@@ -2359,7 +2359,7 @@ localStorage.removeItem('app_hidden_notifications'); */
       room_credentials: newMatchData.room_credentials || null,
       rules: newMatchData.rules || [
         'Mobile devices only (No Emulators).',
-        'Room ID & password shared 15 mins before match start.'
+        'Room ID & password shared 15 mins before match start admin pov mag sakta ha es lie har player ko video recording karni parhy gi jo pov nhi dega osko reward nhi mely ga play fair , play hard , win big reward 💸.'
       ],
       registration_opens_at: newMatchData.registration_opens_at || null,
       start_timestamp: newMatchData.start_timestamp || null,
@@ -2396,17 +2396,17 @@ localStorage.removeItem('app_hidden_notifications'); */
     // Refresh immediately to pull matches from Supabase
     await refreshData(true, true);
 
-    // Trigger global notification
+// Trigger global notification (sirf 1 baar)
     try {
-    await createNotification({
-  user_id: null,
-  title: "👑 VIP MATCH | Naya Tournament",
-  message: `⚡ Match "${newMatchRaw.title}" abhi live hai. Apni VIP slot fast book karein!`,
-  is_read: false,
-  type: 'announcement',
-  match_id: newMatchRaw.id,
-  image: newMatchRaw.banner_url || undefined
-});
+      await createNotification({
+        user_id: null,
+        title: "🏆 VIP MATCH | Naya Tournament",
+        message: `🔥 "${newMatchRaw.title}" ab live hai! Jaldi se apni slot book karo.`,
+        is_read: false,
+        type: 'announcement',
+        match_id: newMatchRaw.id,
+        image: newMatchRaw.banner_url || undefined
+      });
     } catch (err) {
       console.warn('Error creating match notification:', err);
     }
@@ -2542,10 +2542,10 @@ localStorage.removeItem('app_hidden_notifications'); */
       const uniqueUserIds = Array.from(new Set(notifyUserIds));
 
       for (const userId of uniqueUserIds) {
-        await createNotification({
+await createNotification({
           user_id: userId,
-          title: 'Match Credentials Released',
-          message: `🔑 Room ID & Password released for ${match.title}! Check your match card.`,
+          title: '🔑 Room ID & Password Released',
+          message: `🎮 "${match.title}" ka Room ID aur Password aa gaya hai! Match card check karo.`,
           is_read: false,
           type: 'match_credentials',
           match_id: matchId,
