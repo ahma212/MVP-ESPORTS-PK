@@ -2015,46 +2015,39 @@ export async function createNotification(data: Omit<Notification, 'id' | 'create
   if (!isSupabaseConfigured() || !supabase) return;
 
   try {
-    const twoMinutesAgoIso = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+    const fiveMinutesAgoIso = new Date(Date.now() - 5 * 60 * 1000).toISOString();
 
-    // Idempotency check: prevent duplicate notifications within 2 minutes for the same user and type/event
+    // ===== USER-SPECIFIC DEDUP =====
     if (data.user_id) {
       let query = supabase
         .from('notifications')
-        .select('id, title, message, created_at, type')
+        .select('id, title, message, created_at, type, match_id')
         .eq('user_id', data.user_id)
-        .gte('created_at', twoMinutesAgoIso);
+        .gte('created_at', fiveMinutesAgoIso);
 
-      if (data.type) {
-        query = query.eq('type', data.type);
-      }
-      if (data.match_id) {
-        query = query.eq('match_id', data.match_id);
-      }
+      if (data.type) query = query.eq('type', data.type);
+      if (data.match_id) query = query.eq('match_id', data.match_id);
 
       const { data: recentNotifs, error: queryErr } = await query;
 
       if (!queryErr && Array.isArray(recentNotifs) && recentNotifs.length > 0) {
-        // Check if any recent notification matches similar title, message, or wallet event
         const isDuplicate = recentNotifs.some((existing) => {
-          const cleanExistingTitle = (existing.title || '').replace(/[^\w\s]/gi, '').trim().toLowerCase();
-          const cleanNewTitle = (data.title || '').replace(/[^\w\s]/gi, '').trim().toLowerCase();
-          
-          if (cleanExistingTitle && cleanNewTitle && (cleanExistingTitle === cleanNewTitle || cleanExistingTitle.includes(cleanNewTitle) || cleanNewTitle.includes(cleanExistingTitle))) {
+          // Same match_id + same type = duplicate
+          if (data.match_id && existing.match_id === data.match_id && data.type && existing.type === data.type) {
             return true;
           }
 
-          // Check if both are withdrawal/deposit status notifications
-          if (data.type === 'withdrawal' || data.type === 'deposit') {
-            const isBothApproved = (existing.title?.toLowerCase().includes('approved') || existing.message?.toLowerCase().includes('approved')) &&
-                                  (data.title?.toLowerCase().includes('approved') || data.message?.toLowerCase().includes('approved'));
-            const isBothRejected = (existing.title?.toLowerCase().includes('rejected') || existing.message?.toLowerCase().includes('rejected')) &&
-                                  (data.title?.toLowerCase().includes('rejected') || data.message?.toLowerCase().includes('rejected'));
-            if (isBothApproved || isBothRejected) return true;
+          const cleanExistingTitle = (existing.title || '').replace(/[^\w\s]/gi, '').trim().toLowerCase();
+          const cleanNewTitle = (data.title || '').replace(/[^\w\s]/gi, '').trim().toLowerCase();
+
+          if (cleanExistingTitle && cleanNewTitle &&
+              (cleanExistingTitle === cleanNewTitle ||
+               cleanExistingTitle.includes(cleanNewTitle) ||
+               cleanNewTitle.includes(cleanExistingTitle))) {
+            return true;
           }
 
-          // Exact or near-identical message
-          if (existing.message && data.message && (existing.message.trim() === data.message.trim())) {
+          if (existing.message && data.message && existing.message.trim() === data.message.trim()) {
             return true;
           }
 
@@ -2062,22 +2055,29 @@ export async function createNotification(data: Omit<Notification, 'id' | 'create
         });
 
         if (isDuplicate) {
-          console.log('[createNotification] Skipped duplicate notification for user:', data.user_id, data.title);
+          console.log('[createNotification] Skipped duplicate for user:', data.user_id, data.title);
           return;
         }
       }
     } else {
-      // Global broadcast notification idempotency check
-      const { data: recentGlobals } = await supabase
+      // ===== GLOBAL DEDUP (match create etc.) =====
+      let globalQuery = supabase
         .from('notifications')
-        .select('id, title, created_at')
+        .select('id, title, match_id, created_at')
         .is('user_id', null)
-        .eq('title', data.title)
-        .gte('created_at', twoMinutesAgoIso)
-        .limit(1);
+        .gte('created_at', fiveMinutesAgoIso);
+
+      // Pehle match_id se check (sabse strong)
+      if (data.match_id) {
+        globalQuery = globalQuery.eq('match_id', data.match_id);
+      } else {
+        globalQuery = globalQuery.eq('title', data.title);
+      }
+
+      const { data: recentGlobals } = await globalQuery.limit(1);
 
       if (recentGlobals && recentGlobals.length > 0) {
-        console.log('[createNotification] Skipped duplicate global notification:', data.title);
+        console.log('[createNotification] Skipped duplicate global notification:', data.title, data.match_id);
         return;
       }
     }
