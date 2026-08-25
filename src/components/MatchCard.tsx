@@ -77,10 +77,14 @@ export const MatchCard: React.FC<MatchCardProps> = ({
   const isFull = availableSlots <= 0 || match.booked_slots >= availableSlots;
   const hasRoomCredentials = Boolean(match.room_id || match.room_credentials?.some(c => c.room_id));
 
-  // Determine button state, text, styling, and disable behavior
+// Determine button state, text, styling, and disable behavior
   let buttonText = 'SLOT BOOK NOW';
   let buttonStyle = 'bg-cyan-500 hover:bg-cyan-400 text-black font-extrabold cursor-pointer shadow-md shadow-cyan-500/20 active:scale-[0.98]';
   let isDisabled = false;
+
+  // VIP red bar style (same look as MATCH LIVE)
+  const vipRedStyle =
+    'bg-gradient-to-r from-red-600 to-rose-600 text-white font-extrabold shadow-md shadow-red-500/20 cursor-not-allowed';
 
   if (isEnded) {
     buttonText = 'MATCH HAS ENDED 🏁';
@@ -93,15 +97,16 @@ export const MatchCard: React.FC<MatchCardProps> = ({
       : 'bg-[#00e5ff]/20 text-[#00e5ff] border border-[#00e5ff]/50 hover:bg-[#00e5ff]/30 font-extrabold cursor-pointer active:scale-[0.98]';
     isDisabled = false;
   } else if (isStarted) {
-    buttonText = 'MATCH HAS STARTED 🔴';
-    buttonStyle = 'bg-red-900/40 text-red-300 border border-red-500/30 cursor-not-allowed opacity-80';
+    // Non-booked + live → VIP red bar, YouTube text, open nahi hoga
+    buttonText = 'MATCH IS LIVE • WATCH ON YOUTUBE';
+    buttonStyle = vipRedStyle;
     isDisabled = true;
   } else if (isFull) {
+    // Full match → same VIP red bar
     buttonText = 'MATCH FULL 🔒';
-    buttonStyle = 'bg-amber-900/40 text-amber-300 border border-amber-500/30 cursor-not-allowed';
+    buttonStyle = vipRedStyle;
     isDisabled = true;
   }
-
   const formatCountdown = (ms: number) => {
     const totalSecs = Math.max(0, Math.floor(ms / 1000));
     const hrs = Math.floor(totalSecs / 3600);
