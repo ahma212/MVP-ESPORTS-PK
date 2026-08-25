@@ -811,12 +811,14 @@ export async function adminAdjustWalletBalance(
       return { success: false, message: 'Failed to update player wallet balance' };
     }
 
+    const playerUsername = targetProfile.username || cleanUsername;
     const txPayload: any = {
       user_id: targetProfile.id,
       amount: numAmount,
       type: 'reward_adjustment',
       payment_method: actionType === 'add' ? 'Admin Reward' : 'Admin Deduction',
-      account_title: targetProfile.username || cleanUsername,
+      username: playerUsername,
+      account_title: playerUsername,
       sender_name: 'Admin',
       trx_id: 'RWD-' + Math.floor(100000 + Math.random() * 900000),
       status: 'approved',
@@ -831,6 +833,9 @@ export async function adminAdjustWalletBalance(
         amount: numAmount,
         type: 'reward_adjustment',
         payment_method: actionType === 'add' ? 'Admin Reward' : 'Admin Deduction',
+        username: playerUsername,
+        account_title: playerUsername,
+        sender_name: 'Admin',
         status: 'approved',
         created_at: new Date().toISOString()
       };

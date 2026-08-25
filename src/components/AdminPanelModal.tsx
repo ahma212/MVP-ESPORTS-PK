@@ -151,9 +151,15 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
       }
     }
 
-    // 4. Transaction sender_name or account_title
-    if (tx.sender_name || tx.account_title) {
-      const sname = String(tx.sender_name || tx.account_title).replace(/^@+/, '').trim();
+// 4. Prefer account_title (player) over sender_name (Admin) for rewards
+    if (tx.account_title || tx.sender_name) {
+      const preferred =
+        tx.type === 'reward_adjustment' ||
+        tx.payment_method === 'Admin Reward' ||
+        tx.payment_method === 'Admin Deduction'
+          ? (tx.account_title || tx.username || tx.sender_name)
+          : (tx.sender_name || tx.account_title);
+      const sname = String(preferred || '').replace(/^@+/, '').trim();
       if (sname && sname.toLowerCase() !== 'player' && sname.toLowerCase() !== 'n/a' && sname.toLowerCase() !== 'unknown') {
         return sname.startsWith('@') ? sname : `@${sname}`;
       }
