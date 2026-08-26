@@ -1026,7 +1026,7 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = ({
                             <span className="font-extrabold text-[#00e5ff]">RS. {totalCost}</span>
                           </div>
 
-                          <div className="flex gap-2 pt-2pb-4 sticky bottom-0 z-10 bg-[#040e1a]>
+<div className="flex gap-2 pt-2 pb-4 sticky bottom-0 z-10 bg-[#040e1a]">
                             <button
                               type="button"
                               onClick={() => {
