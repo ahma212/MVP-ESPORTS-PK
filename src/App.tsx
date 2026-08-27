@@ -2405,6 +2405,21 @@ localStorage.removeItem('app_hidden_notifications'); */
         match_id: newMatchRaw.id,
         image: newMatchRaw.banner_url || undefined
       });
+// Mobile push (tray notification)
+      try {
+        fetch('https://rsqakcncemlkscobizcr.supabase.co/functions/v1/send-push', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer sb_publishable_uo4Pa8vev48bV3KP75rr8A_G-_72OvB'
+          },
+          body: JSON.stringify({
+            target_type: 'all',
+            title: 'New Tournament Available',
+            message: '"' + newMatchRaw.title + '" is now open for booking.'
+          })
+        }).catch(function () {});
+      } catch (e) {}
     } catch (err) {
       console.warn('Error creating match notification:', err);
     }
