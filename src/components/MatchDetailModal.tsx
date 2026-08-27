@@ -742,12 +742,17 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = ({
                   <div className="p-2.5 rounded-xl bg-[#020710] border border-gray-800">
                     <span className="text-[9px] text-gray-400 block font-semibold uppercase mb-2">My Booked Slots</span>
                     <div className="space-y-1.5">
-                      {userBookings.map((booking, idx) => (
-                        <div key={idx} className="flex justify-between items-center text-xs bg-[#07192e] px-3 py-2 rounded-lg border border-gray-700">
-<span className="text-gray-300 font-bold">• Slot #{booking.slot_number} · Team {Math.ceil(booking.slot_number / 4)}</span>
-                          <span className="text-[#00e5ff] font-extrabold">{booking.player_ign}</span>
-                        </div>
-                      ))}
+{userBookings.map((booking, idx) => (
+  <div key={idx} className="bg-[#07192e] px-3 py-2.5 rounded-lg border border-gray-700 space-y-1">
+    <div className="text-[10px] font-black text-[#00e5ff] uppercase tracking-wider">
+      Team {Math.ceil(booking.slot_number / 4)}
+    </div>
+    <div className="flex justify-between items-center text-xs">
+      <span className="text-gray-300 font-bold">Slot #{booking.slot_number}</span>
+      <span className="text-white font-extrabold">{booking.player_ign}</span>
+    </div>
+  </div>
+))}
                     </div>
                   </div>
                 </div>
