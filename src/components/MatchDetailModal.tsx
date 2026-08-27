@@ -332,7 +332,7 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = ({
                 </div>
               ) : (
                 <p className="text-[11px] text-gray-400 mt-1">
-                  Room ID & Password for Match #{idx + 1} ({mapName}) will be released by host prior to start.
+               Room ID & Password match start se 15 minute pehle release hoga..
                 </p>
               )}
             </div>
@@ -744,7 +744,7 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = ({
                     <div className="space-y-1.5">
                       {userBookings.map((booking, idx) => (
                         <div key={idx} className="flex justify-between items-center text-xs bg-[#07192e] px-3 py-2 rounded-lg border border-gray-700">
-                          <span className="text-gray-300 font-bold">• Slot #{booking.slot_number}</span>
+<span className="text-gray-300 font-bold">• Slot #{booking.slot_number} · Team {Math.ceil(booking.slot_number / 4)}</span>
                           <span className="text-[#00e5ff] font-extrabold">{booking.player_ign}</span>
                         </div>
                       ))}
