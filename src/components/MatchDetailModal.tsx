@@ -359,7 +359,15 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = ({
   const isTdm = match.type === 'tdm';
   const isWowOrTdm = isWow || isTdm;
   const maxAllowedSlots = (isWowOrTdm || squadType === 'SQUAD') ? 4 : squadType === 'DUO' ? 2 : 1;
-
+// Same team ke saare booked players
+  const teamSize = squadType === 'SOLO' ? 1 : squadType === 'DUO' ? 2 : 4;
+  const mySlot = (userBookings || [])[0]?.slot_number || 0;
+  const myTeamIndex = mySlot > 0 ? Math.floor((mySlot - 1) / teamSize) : -1;
+  const teamStart = myTeamIndex >= 0 ? myTeamIndex * teamSize + 1 : 0;
+  const teamEnd = myTeamIndex >= 0 ? Math.min(teamStart + teamSize - 1, match.max_slots) : 0;
+  const teamMates = (matchBookings || [])
+    .filter((b) => b.slot_number >= teamStart && b.slot_number <= teamEnd)
+    .sort((a, b) => a.slot_number - b.slot_number);
   const handleSlotClick = (slotNum: number) => {
     if (match?.locked_slots?.includes(slotNum)) {
       alert(`Slot #${slotNum} is locked and cannot be booked.`);
@@ -646,15 +654,48 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = ({
 
               {/* Match Specs Summary Grid */}
               <div className="grid grid-cols-2 gap-2 text-xs">
-                <div className="p-2.5 rounded-xl bg-[#07192e]/80 border border-gray-800">
-                  <span className="text-[10px] text-gray-400 block font-semibold">MAP & VERSION</span>
-                  <span className="font-bold text-white text-sm">{match.map} ({isWow ? 'WOW' : isTdm ? 'TDM' : match.squad_type})</span>
-                </div>
-                <div className="p-2.5 rounded-xl bg-[#07192e]/80 border border-gray-800">
-                  <span className="text-[10px] text-gray-400 block font-semibold">MATCH TIME</span>
-                  <span className="font-bold text-[#00e5ff] text-xs">{match.match_time}</span>
-                </div>
-                <div className="p-2.5 rounded-xl bg-[#07192e]/80 border border-gray-800">
+                <div className="p-2.5 rounded-xl bg-[#020710] border border-gray-800">
+                    <span className="text-[9px] text-gray-400 block font-semibold uppercase mb-2">
+                      My Team (Team {myTeamIndex + 1}) — {teamMates.length}/{teamSize} filled
+                    </span>
+                    <div className="space-y-1.5">
+                      {teamMates.length > 0 ? (
+                        teamMates.map((booking, idx) => {
+                          const isMe = userBookings.some(
+                            (ub) => ub.slot_number === booking.slot_number
+                          );
+                          return (
+                            <div
+                              key={idx}
+                              className={`flex justify-between items-center text-xs px-3 py-2 rounded-lg border ${
+                                isMe
+                                  ? 'bg-[#00e5ff]/10 border-[#00e5ff]/40'
+                                  : 'bg-[#07192e] border-gray-700'
+                              }`}
+                            >
+                              <span className="text-gray-300 font-bold">
+                                • Slot #{booking.slot_number}
+                                {isMe ? ' (You)' : ''}
+                              </span>
+                              <span className="text-[#00e5ff] font-extrabold">
+                                {booking.player_ign || booking.team_name || 'Player'}
+                              </span>
+                            </div>
+                          );
+                        })
+                      ) : (
+                        userBookings.map((booking, idx) => (
+                          <div
+                            key={idx}
+                            className="flex justify-between items-center text-xs bg-[#07192e] px-3 py-2 rounded-lg border border-gray-700"
+                          >
+                            <span className="text-gray-300 font-bold">• Slot #{booking.slot_number}</span>
+                            <span className="text-[#00e5ff] font-extrabold">{booking.player_ign}</span>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div> className="p-2.5 rounded-xl bg-[#07192e]/80 border border-gray-800">
                   <span className="text-[10px] text-gray-400 block font-semibold">ENTRY FEE</span>
                   <span className="font-bold text-white text-sm">RS. {match.entry_fee} / Player</span>
                 </div>
@@ -740,7 +781,7 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = ({
                   </div>
 
                   <div className="p-2.5 rounded-xl bg-[#020710] border border-gray-800">
-                    <span className="text-[9px] text-gray-400 block font-semibold uppercase mb-2">My Booked Slots</span>
+                    <span className="text-[9px] text-gray-400 block font-semibold uppercase mb-2"></span>
                     <div className="space-y-1.5">
 {userBookings.map((booking, idx) => (
   <div key={idx} className="bg-[#07192e] px-3 py-2.5 rounded-lg border border-gray-700 space-y-1">
