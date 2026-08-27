@@ -652,35 +652,29 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = ({
                 {renderMultiMatchRoomBoxes(match, isAlreadyBooked)}
               </div>
 
-              {/* Match Specs Summary Grid */}
-              <div className="grid grid-cols-2 gap-2 text-xs">
 {/* Match Specs Summary Grid */}
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                <div className="p-2.5 rounded-xl bg-[#07192e]/80 border border-gray-800">
-                  <span className="text-[10px] text-gray-400 block font-semibold">MAP & VERSION</span>
-                  <span className="font-bold text-white text-sm">{match.map}</span>
+              <div className="grid grid-cols-2 gap-2.5 text-xs">
+                <div className="p-3 rounded-xl bg-[#07192e]/80 border border-gray-800">
+                  <span className="text-[10px] text-gray-400 block font-semibold uppercase mb-1">MAP & VERSION</span>
+                  <span className="font-bold text-white text-sm leading-tight">
+                    {match.map} {match.squad_type ? `(${match.squad_type})` : ''}
+                  </span>
                 </div>
-                <div className="p-2.5 rounded-xl bg-[#07192e]/80 border border-gray-800">
-                  <span className="text-[10px] text-gray-400 block font-semibold">MATCH TIME</span>
-                  <span className="font-bold text-white text-sm">{match.match_time}</span>
+                <div className="p-3 rounded-xl bg-[#07192e]/80 border border-gray-800">
+                  <span className="text-[10px] text-gray-400 block font-semibold uppercase mb-1">MATCH TIME</span>
+                  <span className="font-bold text-white text-sm leading-tight">{match.match_time}</span>
                 </div>
-                <div className="p-2.5 rounded-xl bg-[#07192e]/80 border border-gray-800">
-                  <span className="text-[10px] text-gray-400 block font-semibold">ENTRY FEE</span>
+                <div className="p-3 rounded-xl bg-[#07192e]/80 border border-gray-800">
+                  <span className="text-[10px] text-gray-400 block font-semibold uppercase mb-1">ENTRY FEE</span>
                   <span className="font-bold text-white text-sm">RS. {match.entry_fee} / Player</span>
                 </div>
-                <div className="p-2.5 rounded-xl bg-[#07192e]/80 border border-gray-800">
-                  <span className="text-[10px] text-gray-400 block font-semibold">TOTAL POOL</span>
+                <div className="p-3 rounded-xl bg-[#07192e]/80 border border-gray-800">
+                  <span className="text-[10px] text-gray-400 block font-semibold uppercase mb-1">TOTAL POOL</span>
                   <span className="font-bold text-emerald-400 text-sm">
                     RS. {Number(match.prizes?.total_pool ?? match.entry_fee ?? 0).toLocaleString()}
                   </span>
                 </div>
               </div>
-                <div className="p-2.5 rounded-xl bg-[#07192e]/80 border border-gray-800">
-                  <span className="text-[10px] text-gray-400 block font-semibold">TOTAL POOL</span>
-                  <span className="font-bold text-emerald-400 text-sm">RS. {Number(match.prizes?.total_pool ?? match.entry_fee ?? 0).toLocaleString()}</span>
-                </div>
-              </div>
-
               {/* Full Prize Pool Distribution */}
               <div className="p-3.5 rounded-xl bg-[#020710] border border-gray-800">
                 <h4 className="text-xs font-bold text-[#00e5ff] mb-2 flex items-center gap-1 uppercase tracking-wider">
@@ -756,21 +750,62 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = ({
                     </span>
                   </div>
 
-                  <div className="p-2.5 rounded-xl bg-[#020710] border border-gray-800">
-                    <span className="text-[9px] text-gray-400 block font-semibold uppercase mb-2"></span>
-                    <div className="space-y-1.5">
-{userBookings.map((booking, idx) => (
-  <div key={idx} className="bg-[#07192e] px-3 py-2.5 rounded-lg border border-gray-700 space-y-1">
-    <div className="text-[10px] font-black text-[#00e5ff] uppercase tracking-wider">
-      Team {Math.ceil(booking.slot_number / 4)}
-    </div>
-    <div className="flex justify-between items-center text-xs">
-      <span className="text-gray-300 font-bold">Slot #{booking.slot_number}</span>
-      <span className="text-white font-extrabold">{booking.player_ign}</span>
-    </div>
-  </div>
-))}
-                    </div>
+<div className="p-2.5 rounded-xl bg-[#020710] border border-gray-800">
+                    <span className="text-[9px] text-gray-400 block font-semibold uppercase mb-2 tracking-wider">
+                      MY TEAM
+                    </span>
+
+                    {myTeamIndex >= 0 ? (
+                      <div className="space-y-2">
+                        <div className="text-[11px] font-black text-[#00e5ff] uppercase tracking-wider bg-[#00e5ff]/10 px-2.5 py-1 rounded-lg border border-[#00e5ff]/30 inline-block">
+                          TEAM {myTeamIndex + 1}
+                        </div>
+
+                        <div className="space-y-1.5 mt-1">
+                          {teamMates.length > 0 ? (
+                            teamMates.map((booking) => {
+                              const isMe = userBookings.some(
+                                (ub) => ub.slot_number === booking.slot_number
+                              );
+                              return (
+                                <div
+                                  key={booking.slot_number}
+                                  className={`flex justify-between items-center text-xs px-3 py-2 rounded-lg border ${
+                                    isMe
+                                      ? 'bg-[#00e5ff]/15 border-[#00e5ff]/50'
+                                      : 'bg-[#07192e] border-gray-700'
+                                  }`}
+                                >
+                                  <span className="text-gray-300 font-bold">
+                                    Slot #{booking.slot_number}
+                                    {isMe ? ' (You)' : ''}
+                                  </span>
+                                  <span className={`font-extrabold ${isMe ? 'text-[#00e5ff]' : 'text-white'}`}>
+                                    {booking.player_ign || booking.team_name || 'Player'}
+                                  </span>
+                                </div>
+                              );
+                            })
+                          ) : (
+                            userBookings.map((booking) => (
+                              <div
+                                key={booking.slot_number}
+                                className="flex justify-between items-center text-xs px-3 py-2 rounded-lg border bg-[#00e5ff]/15 border-[#00e5ff]/50"
+                              >
+                                <span className="text-gray-300 font-bold">
+                                  Slot #{booking.slot_number} (You)
+                                </span>
+                                <span className="font-extrabold text-[#00e5ff]">
+                                  {booking.player_ign}
+                                </span>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-gray-500">No team data</p>
+                    )}
                   </div>
                 </div>
               )}
