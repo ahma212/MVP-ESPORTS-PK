@@ -1250,17 +1250,15 @@ if (onlineChannel) {
         typeof window !== 'undefined' &&
         'Notification' in window &&
         'serviceWorker' in navigator &&
-        Notification.permission === 'default' &&
-        !localStorage.getItem('mvp_push_prompted')
+Notification.permission === 'default'
       ) {
         const askPush = async () => {
           try {
-            localStorage.setItem('mvp_push_prompted', '1');
             const registration = await navigator.serviceWorker.register('/sw.js');
-            await navigator.serviceWorker.ready;
-            const permission = await Notification.requestPermission();
-            if (permission !== 'granted') return;
-
+await navigator.serviceWorker.ready;
+const permission = await Notification.requestPermission();
+if (permission !== 'granted') return;
+localStorage.setItem('mvp_push_prompted', '1');
             const PUBLIC_VAPID_KEY =
               'BNV-wpFWCVbRfyTYJi-1Q3Iq5OL6zYahjmzVy5O89Ogd1ga739ng' +
               '8RC2nHeoTb3u4L0r3YPULxUOUuab9nMfdHM';
@@ -2398,10 +2396,10 @@ localStorage.removeItem('app_hidden_notifications'); */
 
 // Trigger global notification (sirf 1 baar)
     try {
-      await createNotification({
+     await createNotification({
         user_id: null,
-        title: "🏆 VIP MATCH | Naya Tournament",
-        message: `🔥 "${newMatchRaw.title}" ab live hai! Jaldi se apni slot book karo.`,
+        title: "New Tournament Available",
+        message: `New Tournament Available! "${newMatchRaw.title}" is now open for booking.`,
         is_read: false,
         type: 'announcement',
         match_id: newMatchRaw.id,

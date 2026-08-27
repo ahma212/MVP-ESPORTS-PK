@@ -19,12 +19,12 @@ self.addEventListener('fetch', (event) => {
 });
 
 // ==========================================
-// ADDED: VIP Push Notification Listeners
+// Push Notification Listener
 // ==========================================
 self.addEventListener('push', (event) => {
   let data = {
     title: 'MVP ESPORTS',
-    body: 'Aapke paas ek naya notification aaya hai!',
+    body: 'You have a new notification!',
     url: '/'
   };
 
