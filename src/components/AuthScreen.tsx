@@ -114,7 +114,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
     const secs = totalSeconds % 60;
     return `\( {mins.toString().padStart(2, '0')}: \){secs.toString().padStart(2, '0')}`;
   };
-
   const isLocked = lockUntil !== null && remainingLockTime > 0;
 
   const isValidEmail = (val: string) => {
