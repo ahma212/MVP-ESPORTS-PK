@@ -654,51 +654,27 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = ({
 
               {/* Match Specs Summary Grid */}
               <div className="grid grid-cols-2 gap-2 text-xs">
-                <div className="p-2.5 rounded-xl bg-[#020710] border border-gray-800">
-                    <span className="text-[9px] text-gray-400 block font-semibold uppercase mb-2">
-                      My Team (Team {myTeamIndex + 1}) — {teamMates.length}/{teamSize} filled
-                    </span>
-                    <div className="space-y-1.5">
-                      {teamMates.length > 0 ? (
-                        teamMates.map((booking, idx) => {
-                          const isMe = userBookings.some(
-                            (ub) => ub.slot_number === booking.slot_number
-                          );
-                          return (
-                            <div
-                              key={idx}
-                              className={`flex justify-between items-center text-xs px-3 py-2 rounded-lg border ${
-                                isMe
-                                  ? 'bg-[#00e5ff]/10 border-[#00e5ff]/40'
-                                  : 'bg-[#07192e] border-gray-700'
-                              }`}
-                            >
-                              <span className="text-gray-300 font-bold">
-                                • Slot #{booking.slot_number}
-                                {isMe ? ' (You)' : ''}
-                              </span>
-                              <span className="text-[#00e5ff] font-extrabold">
-                                {booking.player_ign || booking.team_name || 'Player'}
-                              </span>
-                            </div>
-                          );
-                        })
-                      ) : (
-                        userBookings.map((booking, idx) => (
-                          <div
-                            key={idx}
-                            className="flex justify-between items-center text-xs bg-[#07192e] px-3 py-2 rounded-lg border border-gray-700"
-                          >
-                            <span className="text-gray-300 font-bold">• Slot #{booking.slot_number}</span>
-                            <span className="text-[#00e5ff] font-extrabold">{booking.player_ign}</span>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  </div> className="p-2.5 rounded-xl bg-[#07192e]/80 border border-gray-800">
+{/* Match Specs Summary Grid */}
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div className="p-2.5 rounded-xl bg-[#07192e]/80 border border-gray-800">
+                  <span className="text-[10px] text-gray-400 block font-semibold">MAP & VERSION</span>
+                  <span className="font-bold text-white text-sm">{match.map}</span>
+                </div>
+                <div className="p-2.5 rounded-xl bg-[#07192e]/80 border border-gray-800">
+                  <span className="text-[10px] text-gray-400 block font-semibold">MATCH TIME</span>
+                  <span className="font-bold text-white text-sm">{match.match_time}</span>
+                </div>
+                <div className="p-2.5 rounded-xl bg-[#07192e]/80 border border-gray-800">
                   <span className="text-[10px] text-gray-400 block font-semibold">ENTRY FEE</span>
                   <span className="font-bold text-white text-sm">RS. {match.entry_fee} / Player</span>
                 </div>
+                <div className="p-2.5 rounded-xl bg-[#07192e]/80 border border-gray-800">
+                  <span className="text-[10px] text-gray-400 block font-semibold">TOTAL POOL</span>
+                  <span className="font-bold text-emerald-400 text-sm">
+                    RS. {Number(match.prizes?.total_pool ?? match.entry_fee ?? 0).toLocaleString()}
+                  </span>
+                </div>
+              </div>
                 <div className="p-2.5 rounded-xl bg-[#07192e]/80 border border-gray-800">
                   <span className="text-[10px] text-gray-400 block font-semibold">TOTAL POOL</span>
                   <span className="font-bold text-emerald-400 text-sm">RS. {Number(match.prizes?.total_pool ?? match.entry_fee ?? 0).toLocaleString()}</span>
