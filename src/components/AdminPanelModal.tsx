@@ -26,7 +26,7 @@ interface AdminPanelModalProps {
   matches: Match[];
   transactions: WalletTransaction[];
   onCreateMatch: (newMatch: Partial<Match>) => Promise<void>;
-  onPublishRoomDetails: (matchId: string, roomId: string, roomPass: string, mapIndex?: number, releaseTimerMinutes?: number, roomCredentialsOverride?: RoomCredential[]) => void;
+  onPublishRoomDetails: (matchId: string, roomId: string, roomPass: string, mapIndex?: number, releaseTimerMinutes?: number, roomCredentialsOverride?: RoomCredential[]) => void | Promise<void>;
   onEditMatch?: (updatedMatch: Match) => Promise<void>;
   onDeleteMatch?: (matchId: string) => Promise<void>;
   onApproveTransaction: (txId: string) => void;
@@ -1719,7 +1719,7 @@ const pendingDepositTransactions = Array.isArray(realtimeDepositRequests) && rea
   const [isUploadingResultImage, setIsUploadingResultImage] = useState<boolean>(false);
   const [isPublishingResult, setIsPublishingResult] = useState<boolean>(false);
   const [isPublishingImage, setIsPublishingImage] = useState<boolean>(false);
-
+const [isPublishingRoom, setIsPublishingRoom] = useState<boolean>(false);
   // Published Results List State
   const [publishedResults, setPublishedResults] = useState<MatchResult[]>([]);
   const [isLoadingPublishedResults, setIsLoadingPublishedResults] = useState<boolean>(false);
@@ -2413,12 +2413,13 @@ const pendingDepositTransactions = Array.isArray(realtimeDepositRequests) && rea
     }
   };
 
-  const handlePublishSubmit = (e?: React.FormEvent | React.MouseEvent) => {
+  const handlePublishSubmit = async (e?:
+  React.FormEvent | React.MouseEvent) => {
     if (e) {
       e.preventDefault();
       e.stopPropagation();
     }
-    
+    if (isPublishingRoom) return;
     if (!selectedMatchId) {
       alert('CRITICAL FAILURE: No Match Selected!');
       return;
@@ -2458,14 +2459,19 @@ const pendingDepositTransactions = Array.isArray(realtimeDepositRequests) && rea
 
       const firstValid = override.find(c => c.room_id);
 
-      onPublishRoomDetails(
-        selectedMatchId, 
-        firstValid?.room_id || '', 
-        firstValid?.room_password || '', 
-        0,  
-        0,
-        override
-      );
+      setIsPublishingRoom(true);
+try {
+  await onPublishRoomDetails(
+    selectedMatchId,
+    firstValid?.room_id || '',
+    firstValid?.room_password || '',
+    0,
+    0,
+    override
+  );
+} finally {
+  setIsPublishingRoom(false);
+}
     } else {
       // Force-capture inputs from state
       const currentRoomId = roomId.trim();
@@ -2483,13 +2489,18 @@ const pendingDepositTransactions = Array.isArray(realtimeDepositRequests) && rea
       }
 
       // Direct Dispatch
-      onPublishRoomDetails(
-        selectedMatchId, 
-        currentRoomId, 
-        currentRoomPass, 
-        selectedMapIndex, 
-        currentTimer
-      );
+      setIsPublishingRoom(true);
+try {
+  await onPublishRoomDetails(
+    selectedMatchId,
+    currentRoomId,
+    currentRoomPass,
+    selectedMapIndex,
+    currentTimer
+  );
+} finally {
+  setIsPublishingRoom(false);
+}
     }
     
     // Instant feedback sync
@@ -2498,7 +2509,8 @@ const pendingDepositTransactions = Array.isArray(realtimeDepositRequests) && rea
     }
   };
 
-  const handlePublishTournamentBox = (boxIdx: number) => {
+  const handlePublishTournamentBox
+  = async (boxIdx: number) => { 
     if (!selectedMatchId || !activeSelectedMatch) return;
 
     const rId = (multiRoomIds[boxIdx] || '').trim();
@@ -2540,15 +2552,19 @@ const pendingDepositTransactions = Array.isArray(realtimeDepositRequests) && rea
       };
     });
 
-    onPublishRoomDetails(
-      selectedMatchId,
-      existingCreds[0]?.room_id || rId,
-      existingCreds[0]?.room_password || rPass,
-      boxIdx,
-      timerMins,
-      existingCreds
-    );
-
+      setIsPublishingRoom(true);
+try {
+  await onPublishRoomDetails(
+    selectedMatchId,
+    existingCreds[0]?.room_id || rId,
+    existingCreds[0]?.room_password || rPass,
+    boxIdx,
+    timerMins,
+    existingCreds
+  );
+} finally {
+  setIsPublishingRoom(false);
+}
     if (onDataRefresh) {
       setTimeout(() => onDataRefresh(), 100);
     }
@@ -4043,8 +4059,14 @@ const pendingDepositTransactions = Array.isArray(realtimeDepositRequests) && rea
                         ? "from-emerald-400 to-green-500 text-[#030a16] shadow-emerald-500/20 hover:brightness-110"
                         : "from-[#00e5ff] to-[#0088ff] text-[#030a16] shadow-[#00e5ff]/20 hover:brightness-110"
                     }`}
+                    disabled={isPublishingRoom}
                   >
-                    {isModified && isAlreadyPublished ? (
+                  {isPublishingRoom ? (
+  <>
+    <RefreshCw className="w-4 h-4 animate-spin" />
+    PUBLISHING ROOM TO BOOKED PLAYERS...
+  </>
+) : isModified && isAlreadyPublished ? (
                       <>
                         <RefreshCw className="w-4 h-4 animate-spin-slow" />
                         UPDATE & RE-PUBLISH NEW ROOM DETAILS 🔄
@@ -4057,7 +4079,7 @@ const pendingDepositTransactions = Array.isArray(realtimeDepositRequests) && rea
                     ) : (
                       <>
                         <Send className="w-4 h-4" />
-                        PUBLISH ROOM DETAILS TO BOOKED PLAYERS 🚀
+                          PUBLISH ROOM DETAILS TO BOOKED PLAYERS 🚀
                       </>
                     )}
                   </button>
