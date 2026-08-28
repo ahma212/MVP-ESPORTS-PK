@@ -611,7 +611,7 @@ export const MyMatchesView: React.FC<MyMatchesViewProps> = ({
                 )}
 
                 {/* Dynamic Multi-Match Room ID Cards (For Upcoming & Live) */}
-                {!isCompleted && (() => {
+               {( !isCompleted || hasRoomCredentials ) && (() => {  
                   const mapsList =
                     match.maps && match.maps.length > 0
                       ? match.maps
