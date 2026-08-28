@@ -1,3 +1,4 @@
+import { getMatchStartTimestamp, isMatchPlayEnded, isMatchPlayLive } from '../lib/matchTiming';
 import React from 'react';
 import { Match } from '../types';
 import { Trophy, Swords, Clock, Users, ShieldAlert, KeyRound, Flame, Crosshair } from 'lucide-react';
@@ -42,29 +43,10 @@ export const MatchCard: React.FC<MatchCardProps> = ({
     return () => clearInterval(timer);
   }, []);
 
-  const startTimestamp =
-    match.start_timestamp ||
-    (typeof match.start_time === 'number'
-      ? match.start_time
-      : typeof match.start_time === 'string' && !isNaN(Date.parse(match.start_time))
-      ? Date.parse(match.start_time)
-      : match.timestamp) ||
-    Date.now() + 3600000;
-
+  const startTimestamp = getMatchStartTimestamp(match, now);
   const diff = startTimestamp - now;
-
-  // Real-time based Match Status Calculation:
-  // Home MatchCard "MATCH HAS ENDED" must depend ONLY on real time logic:
-  // 1) Countdown / play window has expired (diff <= -30 * 60 * 1000)
-  // 2) OR admin explicitly ended the match when scheduled time has arrived/passed (match.is_ended === true && diff <= 0)
-  const isEnded =
-    (diff <= -30 * 60 * 1000) ||
-    (Boolean(match.is_ended) && diff <= 0);
-
-  // Match ONLY starts when its scheduled countdown time expires (diff <= 0) or status is 'live'
-  const isStarted =
-    !isEnded &&
-    (diff <= 0 || match.status === 'live');
+  const isEnded = isMatchPlayEnded(match, now);
+  const isStarted = isMatchPlayLive(match, now);
 
   const maxSlotsSafe = Math.max(0, Number(match.max_slots) || 0);
   const rawLocked = Array.isArray(match.locked_slots) ? match.locked_slots : [];
@@ -87,21 +69,25 @@ export const MatchCard: React.FC<MatchCardProps> = ({
     'bg-gradient-to-r from-red-600 to-rose-600 text-white font-extrabold shadow-md shadow-red-500/20 cursor-not-allowed';
 
   if (isEnded) {
-    buttonText = 'MATCH HAS ENDED 🏁';
+    buttonText = isTournament ? 'TOURNAMENT HAS ENDED 🏁' : 'MATCH HAS ENDED 🏁';
     buttonStyle = 'bg-slate-800 text-slate-400 border border-slate-700/50 cursor-not-allowed opacity-75';
     isDisabled = true;
   } else if (isBookedByMe) {
-    buttonText = isStarted ? 'MATCH LIVE • VIEW ROOM & SLOT' : 'VIEW SLOT & ROOM DETAILS';
+    buttonText = isStarted
+      ? (isTournament ? 'TOURNAMENT LIVE • VIEW ROOM & SLOT' : 'MATCH LIVE • VIEW ROOM & SLOT')
+      : 'VIEW SLOT & ROOM DETAILS';
     buttonStyle = isStarted
       ? 'bg-gradient-to-r from-red-600 to-rose-600 text-white font-extrabold cursor-pointer shadow-md shadow-red-500/20 active:scale-[0.98]'
       : 'bg-[#00e5ff]/20 text-[#00e5ff] border border-[#00e5ff]/50 hover:bg-[#00e5ff]/30 font-extrabold cursor-pointer active:scale-[0.98]';
     isDisabled = false;
   } else if (isStarted) {
-    // Non-booked + live → VIP red bar, YouTube text, open nahi hoga
-    buttonText = 'MATCH IS LIVE • WATCH ON YOUTUBE';
+    buttonText = isTournament
+      ? 'TOURNAMENT IS LIVE • WATCH ON YOUTUBE'
+      : 'MATCH IS LIVE • WATCH ON YOUTUBE';
     buttonStyle = vipRedStyle;
     isDisabled = true;
-  } else if (isFull) {
+  }
+else if (isFull) {
     // Full match → same VIP red bar
     buttonText = 'MATCH FULL 🔒';
     buttonStyle = vipRedStyle;

@@ -1,3 +1,4 @@
+import { isMatchPlayEnded, isMatchPlayLive } from '../lib/matchTiming';
 import React, { useState, useEffect, useCallback } from 'react';
 import { Match, SlotBooking, UserProfile } from '../types';
 import { Gamepad2, Copy, Check, Clock, Trophy, ChevronRight, Sparkles, ArrowLeft, RefreshCw, Lock, AlertCircle, Shield } from 'lucide-react';
@@ -135,16 +136,8 @@ export const MyMatchesView: React.FC<MyMatchesViewProps> = ({
     return startTimestamp - now;
   };
 
-  const isMatchEnded = (m: Match) => {
-    const diff = getMatchTimeDiff(m);
-    return m.status === 'completed' || diff <= -30 * 60 * 1000 || (Boolean(m.is_ended) && diff <= 0);
-  };
-
-  const isMatchLiveNow = (m: Match) => {
-    const diff = getMatchTimeDiff(m);
-    return !isMatchEnded(m) && (diff <= 0 || m.status === 'live');
-  };
-
+  const isMatchEnded = (m: Match) => isMatchPlayEnded(m, now);
+  const isMatchLiveNow = (m: Match) => isMatchPlayLive(m, now);
   // Helper to format remaining time into detailed HH:MM:SS or DDd HH:MM:SS
   const formatCountdown = (diffMs: number) => {
     if (diffMs <= 0) {

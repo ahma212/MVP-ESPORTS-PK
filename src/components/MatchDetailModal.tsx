@@ -1,3 +1,4 @@
+import { getMatchStartTimestamp, isMatchPlayEnded, isMatchPlayLive } from '../lib/matchTiming';
 import React, { useState, useRef } from 'react';
 import { Match, SlotBooking, UserProfile } from '../types';
 import { X, Trophy, ShieldAlert, KeyRound, Copy, Check, Users, Clock, AlertTriangle, Crosshair, CheckCircle2, ArrowLeft, RefreshCw } from 'lucide-react';
@@ -167,29 +168,11 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = ({
 
   if (!match) return null;
 
-  const startTimestamp =
-    match.start_timestamp ||
-    (typeof match.start_time === 'number'
-      ? match.start_time
-      : typeof match.start_time === 'string' && !isNaN(Date.parse(match.start_time))
-      ? Date.parse(match.start_time)
-      : match.timestamp) ||
-    Date.now() + 3600000;
-
+  const startTimestamp = getMatchStartTimestamp(match, now);
   const diff = startTimestamp - now;
-
-  // Real-time based Match Status Calculation:
-  // Match is ONLY ended if:
-  // 1) Countdown / play window has expired (diff <= -30 * 60 * 1000)
-  // 2) OR admin explicitly ended the match when scheduled time has arrived/passed (match.is_ended === true && diff <= 0)
-  const isEnded =
-    (diff <= -30 * 60 * 1000) ||
-    (Boolean(match.is_ended) && diff <= 0);
-
-  // Match ONLY starts when its scheduled countdown time expires (diff <= 0) or status is 'live'
-  const isStarted =
-    !isEnded &&
-    (diff <= 0 || match.status === 'live');
+  const isEnded = isMatchPlayEnded(match, now);
+  const isStarted = isMatchPlayLive(match, now);
+  const isTournament = match.type === 'tournament';
 
   const lockedCount = Array.isArray(match.locked_slots) ? match.locked_slots.length : 0;
   const availableSlots = match.max_slots - lockedCount;
@@ -1159,7 +1142,7 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = ({
                 disabled
                 className="w-full py-3.5 rounded-xl bg-slate-800 text-slate-400 border border-slate-700/50 font-extrabold text-xs flex items-center justify-center gap-1.5 cursor-not-allowed opacity-75"
               >
-                MATCH HAS ENDED 🏁
+                {isTournament ? 'TOURNAMENT HAS ENDED 🏁' : 'MATCH HAS ENDED 🏁'}
               </button>
             ) : isStarted ? (
               <button
@@ -1167,7 +1150,7 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = ({
                 disabled
                 className="w-full py-3.5 rounded-xl bg-red-900/40 text-red-300 border border-red-500/30 font-extrabold text-xs flex items-center justify-center gap-1.5 cursor-not-allowed opacity-80"
               >
-                MATCH HAS STARTED 🔴
+               {isTournament ? 'TOURNAMENT IS LIVE • WATCH ON YOUTUBE' : 'MATCH HAS STARTED 🔴'}
               </button>
             ) : isFull ? (
               <button
