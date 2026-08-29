@@ -2546,11 +2546,13 @@ const handleOpenAdmin = () => {
           });
       }
 
-      // Unique IDs only
+     // Unique IDs only
       const uniqueUserIds = Array.from(new Set(notifyUserIds));
 
       const matchNo = (mapIndex || 0) + 1;
-        const isTour = match.type === 'tournament';
+      const isTour = match.type === 'tournament';
+
+      for (const userId of uniqueUserIds) {
         await createNotification({
           user_id: userId,
           title: isTour
