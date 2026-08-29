@@ -1780,7 +1780,7 @@ const handleOpenAdmin = () => {
     setCurrentScreen('admin_login');
   };
 
-  const handleLogout = () => {
+  function handleLogout() {
     setIsAdminUnlocked(false);
     setSelectedMatch(null);
     setIsWalletOpen(false);
