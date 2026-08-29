@@ -2057,7 +2057,7 @@ const handleOpenAdmin = () => {
                 createNotification({
                   user_id: tId,
                   title: 'Team Slot Booked',
-                  message: `@${bookerUsername} ne aapki team ki slot book kar di hai. Match check karo — team ready ho rahi hai!`,
+               message: `@${bookerUsername} booked a slot for your team. Check the match — team is getting ready.`,
                   type: 'slot_booking',
                   is_read: false,
                   match_id: matchId
@@ -2400,21 +2400,7 @@ const handleOpenAdmin = () => {
         match_id: newMatchRaw.id,
         image: newMatchRaw.banner_url || undefined
       });
-// Mobile push (tray notification)
-      try {
-        fetch('https://rsqakcncemlkscobizcr.supabase.co/functions/v1/send-push', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer sb_publishable_uo4Pa8vev48bV3KP75rr8A_G-_72OvB'
-          },
-          body: JSON.stringify({
-            target_type: 'all',
-            title: 'New Tournament Available',
-            message: '"' + newMatchRaw.title + '" is now open for booking.'
-          })
-        }).catch(function () {});
-      } catch (e) {}
+
     } catch (err) {
       console.warn('Error creating match notification:', err);
     }
@@ -2556,11 +2542,11 @@ const handleOpenAdmin = () => {
         await createNotification({
           user_id: userId,
           title: isTour
-            ? ('🔑 ' + match.title + ' — Match ' + matchNo + ' Room ID')
-            : '🔑 Room ID & Password Released',
+            ? (match.title + ' — Match ' + matchNo + ' Room Ready')
+            : 'Room ID & Password Released',
           message: isTour
-            ? ('🎮 "' + match.title + '" — Match ' + matchNo + ' ka Room ID aur Password aa gaya hai. My Matches → View Slot.')
-            : ('🎮 "' + match.title + '" ka Room ID aur Password aa gaya hai! Match card check karo.'),
+            ? ('Room ID and password for "' + match.title + '" Match ' + matchNo + ' are ready. Open My Matches → View Slot.')
+            : ('Room ID and password for "' + match.title + '" are ready. Check your match card.'),
           is_read: false,
           type: 'match_credentials',
           match_id: matchId,

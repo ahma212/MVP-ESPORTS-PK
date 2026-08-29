@@ -467,42 +467,6 @@ export async function syncProfilesFromMatchResult(matchRes: MatchResult) {
               .update(updatePayload)
               .eq('username', matchedProf.username);
           }
-
-          // Ranking achievement notifications (classic matches only — already filtered above)
-          try {
-            const pRank = Number(pRes.rank ?? 0);
-            const isWinner = Boolean(pRes.is_winner || pRes.is_win || pRank === 1);
-
-            if (isWinner) {
-              await createNotification({
-                user_id: matchedProf.id,
-                title: '🏆 Champion Spot!',
-                message: `🥇 Incredible! You secured Rank 1 / Winner position in "${matchRes.match_title}"!`,
-                is_read: false,
-                type: 'announcement',
-              });
-            } else if (pRank > 1 && pRank <= 3) {
-              await createNotification({
-                user_id: matchedProf.id,
-                title: '🥈 Top 3 Finish!',
-                message: `🔥 Amazing play! You secured Rank \( {pRank} (Top 3) in " \){matchRes.match_title}"!`,
-                is_read: false,
-                type: 'announcement',
-              });
-            } else if (pRank > 3 && pRank <= 10) {
-              await createNotification({
-                user_id: matchedProf.id,
-                title: '⭐ Top 10 Finisher',
-                message: `💪 Great effort! You achieved Rank \( {pRank} (Top 10) in " \){matchRes.match_title}"!`,
-                is_read: false,
-                type: 'announcement',
-              });
-            }
-          } catch (notifErr) {
-            console.warn(
-              'Failed to dispatch ranking achievement notification:',
-              notifErr
-            );
           }
         } catch (supabaseErr) {
           console.error(
@@ -1946,7 +1910,9 @@ export async function getNotifications(userId: string): Promise<Notification[]> 
 
           // Check if an identical notification was already accepted within 2 minutes
           const isDuplicateEvent = deduplicated.some(existing => {
-            if (existing.user_id !== notif.user_id) return false;
+            if (existing.match_id && notif.match_id && existing.match_id === notif.match_id && existing.type === notif.type) {
+              return true;
+            }
             if (existing.type !== notif.type) return false;
 
             const existingTime = new Date(existing.created_at).getTime();
