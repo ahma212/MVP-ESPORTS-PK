@@ -66,7 +66,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   useEffect(() => {
     localStorage.setItem('app_hidden_notifications', JSON.stringify(hiddenPublicIds));
-  }, [hiddenPublicIds]);NotificationModal
+  }, [hiddenPublicIds]);
   const [socialUnreadCount, setSocialUnreadCount] = useState<number>(0);
 
   const loadSocialUnreadCount = async () => {
@@ -79,7 +79,11 @@ export const Navbar: React.FC<NavbarProps> = ({
       console.warn('Error loading social unread count:', e);
     }
   };
-
+const loadNotifications = async () => {
+    if (!userProfile) return;
+    const data = await getNotifications(userProfile.id);
+    setNotifications(data);
+  };
   useEffect(() => {
     if (userProfile) {
       loadNotifications();
@@ -144,12 +148,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     }
   }, [userProfile?.id]);
 
-  const loadNotifications = async () => {
-    if (!userProfile) return;
-    const data = await getNotifications(userProfile.id);
-    setNotifications(data);
-  };
-
+  
   const twentyFourHoursAgo = Date.now() - 24 * 60 * 60 * 1000;
 
   const visibleNotifications = notifications

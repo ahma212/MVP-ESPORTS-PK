@@ -1448,7 +1448,7 @@ localStorage.setItem('mvp_push_prompted', '1');
   const fetchProfile = async (userId: string, userEmail?: string, userMetadata?: any) => {
     if (isSupabaseConfigured() && supabase) {
       try {
-        const { data, error } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
+        const {   data, error } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
 
         if (error) {
           console.warn("Error querying public.profiles:", error.message);
@@ -1486,7 +1486,7 @@ localStorage.setItem('mvp_push_prompted', '1');
           return null;
         }
       } catch (err) {
-        console.warn("Failed to load profile from database:", err);
+        console.warn("Failed tLogging into Arenao load profile from database:", err);
         return null;
       }
     }
@@ -1771,7 +1771,7 @@ localStorage.setItem('mvp_push_prompted', '1');
     }, { isGlobal: true, globalMessage: 'Logging into Arena...' });
   };
 
-  const handleOpenAdmin = () => {
+const handleOpenAdmin = () => {
     const isAdmin = Boolean(userProfile?.is_admin === true);
     if (!isAdmin) {
       showToast('Access Denied: Only administrators can access the admin panel.');
@@ -1793,8 +1793,6 @@ localStorage.setItem('mvp_push_prompted', '1');
     setActiveBottomTab('home');
     setSearchQuery('');
     setMatchTab('all');
-/* localStorage.removeItem('app_read_notifications');
-localStorage.removeItem('app_hidden_notifications'); */
     if (isSupabaseConfigured() && supabase) {
       supabase.auth.signOut().catch(err => console.warn("Supabase signout notice:", err));
     }
@@ -1815,7 +1813,6 @@ localStorage.removeItem('app_hidden_notifications'); */
     setCurrentScreen('auth');
     setAuthMode('login');
   };
-
   // Slot Booking Handler
   const handleBookSlot = async ({
     matchId,
