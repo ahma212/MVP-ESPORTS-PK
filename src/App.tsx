@@ -2552,7 +2552,6 @@ const handleOpenAdmin = () => {
           match_id: matchId,
         });
       }
-
       console.log('[Room Credentials] Notifications sent to', uniqueUserIds.length, 'players');
     } catch (notifErr) {
       console.warn('Room credentials notification error:', notifErr);
