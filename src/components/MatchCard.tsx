@@ -1,4 +1,4 @@
-import { getMatchStartTimestamp, isMatchPlayEnded, isMatchPlayLive, getTournamentMapPhase } from '../lib/matchTiming';
+import { getMatchStartTimestamp, isMatchPlayEnded, isMatchPlayLive, getTournamentMapPhase, getTournamentMapsCount } from '../lib/matchTiming';
 import React from 'react';
 import { Match } from '../types';
 import { Trophy, Swords, Clock, Users, ShieldAlert, KeyRound, Flame, Crosshair } from 'lucide-react';
@@ -47,7 +47,7 @@ export const MatchCard: React.FC<MatchCardProps> = ({
   const diff = startTimestamp - now;
   const isEnded = isMatchPlayEnded(match, now);
   const isStarted = isMatchPlayLive(match, now);
-const isTournament = match.type === 'tournament';
+  const isTournament = match.type === 'tournament';
   const maxSlotsSafe = Math.max(0, Number(match.max_slots) || 0);
   const rawLocked = Array.isArray(match.locked_slots) ? match.locked_slots : [];
   const validLocked = rawLocked.filter(
@@ -59,40 +59,6 @@ const isTournament = match.type === 'tournament';
   const isFull = availableSlots <= 0 || match.booked_slots >= availableSlots;
   const hasRoomCredentials = Boolean(match.room_id || match.room_credentials?.some(c => c.room_id));
 
-// Determine button state, text, styling, and disable behavior
-  let buttonText = 'SLOT BOOK NOW';
-  let buttonStyle = 'bg-cyan-500 hover:bg-cyan-400 text-black font-extrabold cursor-pointer shadow-md shadow-cyan-500/20 active:scale-[0.98]';
-  let isDisabled = false;
-
-  // VIP red bar style (same look as MATCH LIVE)
-  const vipRedStyle =
-    'bg-gradient-to-r from-red-600 to-rose-600 text-white font-extrabold shadow-md shadow-red-500/20 cursor-not-allowed';
-
-  if (isEnded) {
-    buttonText = isTournament ? 'TOURNAMENT HAS ENDED 🏁' : 'MATCH HAS ENDED 🏁';
-    buttonStyle = 'bg-slate-800 text-slate-400 border border-slate-700/50 cursor-not-allowed opacity-75';
-    isDisabled = true;
-  } else if (isBookedByMe) {
-    buttonText = isStarted
-      ? (isTournament ? 'TOURNAMENT LIVE • VIEW ROOM & SLOT' : 'MATCH LIVE • VIEW ROOM & SLOT')
-      : 'VIEW SLOT & ROOM DETAILS';
-    buttonStyle = isStarted
-      ? 'bg-gradient-to-r from-red-600 to-rose-600 text-white font-extrabold cursor-pointer shadow-md shadow-red-500/20 active:scale-[0.98]'
-      : 'bg-[#00e5ff]/20 text-[#00e5ff] border border-[#00e5ff]/50 hover:bg-[#00e5ff]/30 font-extrabold cursor-pointer active:scale-[0.98]';
-    isDisabled = false;
-  } else if (isStarted) {
-    buttonText = isTournament
-      ? 'TOURNAMENT IS LIVE • WATCH ON YOUTUBE'
-      : 'MATCH IS LIVE • WATCH ON YOUTUBE';
-    buttonStyle = vipRedStyle;
-    isDisabled = true;
-  }
-else if (isFull) {
-    // Full match → same VIP red bar
-    buttonText = 'MATCH FULL 🔒';
-    buttonStyle = vipRedStyle;
-    isDisabled = true;
-  }
   const formatCountdown = (ms: number) => {
     const totalSecs = Math.max(0, Math.floor(ms / 1000));
     const hrs = Math.floor(totalSecs / 3600);
@@ -101,6 +67,65 @@ else if (isFull) {
     const pad = (n: number) => n.toString().padStart(2, '0');
     return `${pad(hrs)}:${pad(mins)}:${pad(secs)}`;
   };
+
+  // Tournament multi-map sequential timing (BEFORE button logic)
+  const mapCount = isTournament ? getTournamentMapsCount(match) : 1;
+
+  let nextMapIdx = 0;
+  for (let i = 0; i < mapCount; i++) {
+    const phase = getTournamentMapPhase(match, i, now);
+    if (phase.phase !== 'ended') {
+      nextMapIdx = i;
+      break;
+    }
+    nextMapIdx = i;
+  }
+
+  const allMapsEnded = isTournament
+    ? Array.from({ length: mapCount }, (_, i) => getTournamentMapPhase(match, i, now).phase === 'ended').every(Boolean)
+    : isEnded;
+
+  const nextPhase = getTournamentMapPhase(match, Math.min(nextMapIdx, mapCount - 1), now);
+  const tournamentTopLabel = allMapsEnded
+    ? 'ENDED'
+    : nextPhase.phase === 'live'
+    ? `MAP ${nextMapIdx + 1} LIVE`
+    : `MAP ${nextMapIdx + 1} · ${formatCountdown(nextPhase.remainingMs)}`;
+
+  // Determine button state, text, styling, and disable behavior
+  let buttonText = 'SLOT BOOK NOW';
+  let buttonStyle = 'bg-cyan-500 hover:bg-cyan-400 text-black font-extrabold cursor-pointer shadow-md shadow-cyan-500/20 active:scale-[0.98]';
+  let isDisabled = false;
+
+  // VIP red bar style (same look as MATCH LIVE)
+  const vipRedStyle =
+    'bg-gradient-to-r from-red-600 to-rose-600 text-white font-extrabold shadow-md shadow-red-500/20 cursor-not-allowed';
+
+  if (isTournament ? allMapsEnded : isEnded) {
+    buttonText = isTournament ? 'TOURNAMENT HAS ENDED 🏁' : 'MATCH HAS ENDED 🏁';
+    buttonStyle = 'bg-slate-800 text-slate-400 border border-slate-700/50 cursor-not-allowed opacity-75';
+    isDisabled = true;
+  } else if (isBookedByMe) {
+    const liveNow = isTournament ? nextPhase.phase === 'live' : isStarted;
+    buttonText = liveNow
+      ? (isTournament ? 'TOURNAMENT LIVE • VIEW ROOM & SLOT' : 'MATCH LIVE • VIEW ROOM & SLOT')
+      : 'VIEW SLOT & ROOM DETAILS';
+    buttonStyle = liveNow
+      ? 'bg-gradient-to-r from-red-600 to-rose-600 text-white font-extrabold cursor-pointer shadow-md shadow-red-500/20 active:scale-[0.98]'
+      : 'bg-[#00e5ff]/20 text-[#00e5ff] border border-[#00e5ff]/50 hover:bg-[#00e5ff]/30 font-extrabold cursor-pointer active:scale-[0.98]';
+    isDisabled = false;
+  } else if (isTournament ? nextPhase.phase === 'live' : isStarted) {
+    buttonText = isTournament
+      ? 'TOURNAMENT IS LIVE • WATCH ON YOUTUBE'
+      : 'MATCH IS LIVE • WATCH ON YOUTUBE';
+    buttonStyle = vipRedStyle;
+    isDisabled = true;
+  } else if (isFull) {
+    // Full match → same VIP red bar
+    buttonText = 'MATCH FULL 🔒';
+    buttonStyle = vipRedStyle;
+    isDisabled = true;
+  }
 
   const percentageBooked = Math.round((match.booked_slots / Math.max(1, availableSlots)) * 100);
 
@@ -177,20 +202,20 @@ else if (isFull) {
   let imageArea = null;
   try {
     if (isTournament) {
-      const mapCount = activeMaps.length;
+      const mapsLen = activeMaps.length;
       let gridColsClass = 'grid-cols-3';
       let cellHeight = 'h-28';
       
-      if (mapCount === 1) {
+      if (mapsLen === 1) {
         gridColsClass = 'grid-cols-1';
         cellHeight = 'h-40 sm:h-44';
-      } else if (mapCount === 2) {
+      } else if (mapsLen === 2) {
         gridColsClass = 'grid-cols-2';
         cellHeight = 'h-32 sm:h-36';
-      } else if (mapCount === 3) {
+      } else if (mapsLen === 3) {
         gridColsClass = 'grid-cols-3';
         cellHeight = 'h-28 sm:h-32';
-      } else if (mapCount === 4) {
+      } else if (mapsLen === 4) {
         gridColsClass = 'grid-cols-2';
         cellHeight = 'h-24 sm:h-28';
       } else {
@@ -208,6 +233,9 @@ else if (isFull) {
               'text-purple-400', 'text-pink-400', 'text-cyan-400'
             ];
             const badgeColor = badgeColors[idx % badgeColors.length];
+            const mapPhase = getTournamentMapPhase(match, idx, now);
+            // Sirf NEXT upcoming map pe timer — baaki upcoming blank
+            const isNextUpcoming = idx === nextMapIdx && mapPhase.phase === 'upcoming';
 
             return (
               <div key={idx} className={`relative rounded-lg overflow-hidden border border-[#00e5ff]/25 ${cellHeight} group bg-black/40 shadow-[0_0_12px_rgba(0,229,255,0.08)]`}>
@@ -221,33 +249,25 @@ else if (isFull) {
                     (e.target as HTMLImageElement).src = getMapImage(mapName);
                   }}
                 />
-                {(() => {
-                  const mapPhase = getTournamentMapPhase(match, idx, now);
-                  const pad = (n: number) => n.toString().padStart(2, '0');
-                  const totalSecs = Math.max(0, Math.floor(mapPhase.remainingMs / 1000));
-                  const mm = pad(Math.floor(totalSecs / 60));
-                  const ss = pad(totalSecs % 60);
-                  const label =
-                    mapPhase.phase === 'ended'
-                      ? 'ENDED'
-                      : mapPhase.phase === 'live'
-                      ? 'STARTED 🔴'
-: ('STARTS IN ' + mm + ':' + ss);
-                  const tone =
-                    mapPhase.phase === 'ended'
-                      ? 'bg-slate-900/80 text-slate-200 border-slate-500/40'
-                      : mapPhase.phase === 'live'
-                      ? 'bg-red-700/85 text-white border-red-300/40'
-                      : 'bg-cyan-900/80 text-cyan-100 border-cyan-400/40';
-                  return (
-                    <div className={`absolute top-1 left-1 right-1 flex justify-center`}>
-                      <span className={`text-[8px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded-md border ${tone}`}>
-                        {label}
-                      </span>
-                    </div>
-                  );
-                })()}
-                {/* Clean small badge - no heavy black blanket */}
+                {/* Status: ENDED / STARTED / only next map STARTS IN */}
+                <div className="absolute top-1 left-1 right-1 flex justify-center">
+                  {mapPhase.phase === 'ended' && (
+                    <span className="text-[8px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded-md border bg-slate-900/80 text-slate-200 border-slate-500/40">
+                      ENDED
+                    </span>
+                  )}
+                  {mapPhase.phase === 'live' && (
+                    <span className="text-[8px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded-md border bg-red-700/85 text-white border-red-300/40 animate-pulse">
+                      STARTED 🔴
+                    </span>
+                  )}
+                  {isNextUpcoming && (
+                    <span className="text-[8px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded-md border bg-cyan-900/80 text-cyan-100 border-cyan-400/40 font-mono">
+                      STARTS IN {formatCountdown(mapPhase.remainingMs)}
+                    </span>
+                  )}
+                </div>
+                {/* Map name bottom */}
                 <div className="absolute bottom-1.5 left-1 right-1 flex justify-center">
                   <span className={`text-[9px] font-black uppercase tracking-wider text-center px-1.5 py-0.5 rounded-md bg-black/65 backdrop-blur-sm border border-white/10 ${badgeColor}`}>
                     {idx + 1}. {mapName}
@@ -301,7 +321,7 @@ else if (isFull) {
           : 'p-3'
       }`}
     >
-      {/* Top Badges */}
+      {/* Top Badges — side layout, sequential timer for tournament */}
       <div className="flex justify-between items-start gap-2 mb-2">
         <div className="flex items-center gap-1.5 flex-wrap">
           <span className={`text-[9px] font-black px-2 py-0.5 rounded border uppercase tracking-wider ${getMapBadge(match.map)}`}>
@@ -317,13 +337,26 @@ else if (isFull) {
               {match.type === 'wow' ? 'WOW' : `${match.map.toUpperCase()} MAP`}
             </span>
           )}
-          {isEnded ? (
+
+          {/* Sequential timer / status — side badge */}
+          {isTournament ? (
+            <span className={`text-[9px] font-black px-2 py-0.5 rounded uppercase flex items-center gap-1 font-mono border ${
+              allMapsEnded
+                ? 'bg-slate-800 text-slate-400 border-slate-700/50'
+                : nextPhase.phase === 'live'
+                ? 'bg-red-900/40 text-red-300 border-red-500/30 animate-pulse'
+                : 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
+            }`}>
+              <Clock className="w-2.5 h-2.5" />
+              {tournamentTopLabel}
+            </span>
+          ) : isEnded ? (
             <span className="bg-slate-800 text-slate-400 border border-slate-700/50 text-[9px] font-black px-2 py-0.5 rounded uppercase flex items-center gap-1">
-             {isTournament ? 'TOURNAMENT HAS ENDED 🏁' : 'MATCH HAS ENDED 🏁'}
+              MATCH HAS ENDED 🏁
             </span>
           ) : isStarted ? (
             <span className="bg-red-900/40 text-red-300 border border-red-500/30 text-[9px] font-black px-2 py-0.5 rounded uppercase flex items-center gap-1 animate-pulse">
-              {isTournament ? 'TOURNAMENT LIVE 🔴' : 'MATCH HAS STARTED 🔴'}
+              MATCH HAS STARTED 🔴
             </span>
           ) : diff > 24 * 60 * 60 * 1000 ? (
             <span className="bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 text-[9px] font-black px-2 py-0.5 rounded uppercase flex items-center gap-1 font-mono">
@@ -337,13 +370,13 @@ else if (isFull) {
             </span>
           )}
 
-          {isFull && !isStarted && !isEnded && (
+          {isFull && !(isTournament ? allMapsEnded : isEnded) && !(isTournament ? nextPhase.phase === 'live' : isStarted) && (
             <span className="bg-amber-900/40 text-amber-300 border border-amber-500/30 text-[9px] font-black px-2 py-0.5 rounded uppercase flex items-center gap-1">
               FULL 🔒
             </span>
           )}
 
-          {isBookedByMe && hasRoomCredentials && !isStarted && !isEnded && (
+          {isBookedByMe && hasRoomCredentials && !(isTournament ? nextPhase.phase === 'live' : isStarted) && !(isTournament ? allMapsEnded : isEnded) && (
             <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[9px] font-black px-2 py-0.5 rounded uppercase flex items-center gap-1 animate-pulse">
               <KeyRound className="w-2.5 h-2.5" />
               ROOM ID READY
