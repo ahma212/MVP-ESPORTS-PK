@@ -47,7 +47,7 @@ export const MatchCard: React.FC<MatchCardProps> = ({
   const diff = startTimestamp - now;
   const isEnded = isMatchPlayEnded(match, now);
   const isStarted = isMatchPlayLive(match, now);
-
+const isTournament = match.type === 'tournament';
   const maxSlotsSafe = Math.max(0, Number(match.max_slots) || 0);
   const rawLocked = Array.isArray(match.locked_slots) ? match.locked_slots : [];
   const validLocked = rawLocked.filter(
@@ -173,8 +173,6 @@ else if (isFull) {
       isKill: true
     });
   }
-
-  const isTournament = match.type === 'tournament';
 
   let imageArea = null;
   try {
