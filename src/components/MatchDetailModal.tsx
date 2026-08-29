@@ -40,7 +40,7 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = ({
   const [teamName, setTeamName] = useState<string>((userBookings || [])[0]?.team_name || '');
   const [bookingStep, setBookingStep] = useState<1 | 2>(1);
   const [playerCount, setPlayerCount] = useState<number>(1);
-  const [bookingMethod, setBookingMethod] = useState<'username' | 'pubg_id'>('username');
+  const [bookingMethod, setBookingMethod] = useState<'username' | 'pubg_id'>('pubg_id');
   const [inputUsernames, setInputUsernames] = useState<string[]>([
     userProfile?.username || '',
     '',
