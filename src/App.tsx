@@ -2498,7 +2498,7 @@ const handleOpenAdmin = () => {
     // Refresh matches from Supabase immediately
     await refreshData(true, true);
 
-   // Create notifications for booked players only (both booker + actual player)
+    // Create notifications for booked players only (both booker + actual player)
     try {
       let notifyUserIds: string[] = [];
 
@@ -2532,7 +2532,7 @@ const handleOpenAdmin = () => {
           });
       }
 
-     // Unique IDs only
+      // Unique IDs only
       const uniqueUserIds = Array.from(new Set(notifyUserIds));
 
       const matchNo = (mapIndex || 0) + 1;
@@ -2552,10 +2552,16 @@ const handleOpenAdmin = () => {
           match_id: matchId,
         });
       }
-      console.log('[Room Credentials] Notifications sent to', uniqueUserIds.length, 'players');
+
+      console.log(
+        '[Room Credentials] Notifications sent to',
+        uniqueUserIds.length,
+        'players'
+      );
     } catch (notifErr) {
       console.warn('Room credentials notification error:', notifErr);
     }
+
     showToast('Room Credentials Updated in Supabase & Dispatched!');
   };
 
