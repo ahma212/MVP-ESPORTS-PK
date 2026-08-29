@@ -1230,9 +1230,7 @@ export default function App() {
             return;
           }
         }
-if (onlineChannel) {
-          supabase?.removeChannel(onlineChannel);
-        }
+  
         // 3. Check for Rejection Alert
         const requests = await getDeletionRequests();
         const rejected = requests.find(r => r.user_id === userProfile.id && r.status === 'rejected');
@@ -1386,7 +1384,7 @@ localStorage.setItem('mvp_push_prompted', '1');
         clearInterval(presenceTimer);
         if (onlineChannel) {
           supabase?.removeChannel(onlineChannel);
-        }updateUserPresence(userProfile.id);
+        }
         if (profileChannel) {
           supabase?.removeChannel(profileChannel);
         }
