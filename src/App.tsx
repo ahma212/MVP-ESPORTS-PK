@@ -2549,11 +2549,16 @@ const handleOpenAdmin = () => {
       // Unique IDs only
       const uniqueUserIds = Array.from(new Set(notifyUserIds));
 
-      for (const userId of uniqueUserIds) {
-await createNotification({
+      const matchNo = (mapIndex || 0) + 1;
+        const isTour = match.type === 'tournament';
+        await createNotification({
           user_id: userId,
-          title: '🔑 Room ID & Password Released',
-          message: `🎮 "${match.title}" ka Room ID aur Password aa gaya hai! Match card check karo.`,
+          title: isTour
+            ? ('🔑 ' + match.title + ' — Match ' + matchNo + ' Room ID')
+            : '🔑 Room ID & Password Released',
+          message: isTour
+            ? ('🎮 "' + match.title + '" — Match ' + matchNo + ' ka Room ID aur Password aa gaya hai. My Matches → View Slot.')
+            : ('🎮 "' + match.title + '" ka Room ID aur Password aa gaya hai! Match card check karo.'),
           is_read: false,
           type: 'match_credentials',
           match_id: matchId,

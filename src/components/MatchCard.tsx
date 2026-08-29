@@ -1,4 +1,4 @@
-import { getMatchStartTimestamp, isMatchPlayEnded, isMatchPlayLive } from '../lib/matchTiming';
+import { getMatchStartTimestamp, isMatchPlayEnded, isMatchPlayLive, getTournamentMapPhase } from '../lib/matchTiming';
 import React from 'react';
 import { Match } from '../types';
 import { Trophy, Swords, Clock, Users, ShieldAlert, KeyRound, Flame, Crosshair } from 'lucide-react';
@@ -221,6 +221,32 @@ else if (isFull) {
                     (e.target as HTMLImageElement).src = getMapImage(mapName);
                   }}
                 />
+                {(() => {
+                  const mapPhase = getTournamentMapPhase(match, idx, now);
+                  const pad = (n: number) => n.toString().padStart(2, '0');
+                  const totalSecs = Math.max(0, Math.floor(mapPhase.remainingMs / 1000));
+                  const mm = pad(Math.floor(totalSecs / 60));
+                  const ss = pad(totalSecs % 60);
+                  const label =
+                    mapPhase.phase === 'ended'
+                      ? 'ENDED'
+                      : mapPhase.phase === 'live'
+                      ? 'STARTED 🔴'
+: ('STARTS IN ' + mm + ':' + ss);
+                  const tone =
+                    mapPhase.phase === 'ended'
+                      ? 'bg-slate-900/80 text-slate-200 border-slate-500/40'
+                      : mapPhase.phase === 'live'
+                      ? 'bg-red-700/85 text-white border-red-300/40'
+                      : 'bg-cyan-900/80 text-cyan-100 border-cyan-400/40';
+                  return (
+                    <div className={`absolute top-1 left-1 right-1 flex justify-center`}>
+                      <span className={`text-[8px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded-md border ${tone}`}>
+                        {label}
+                      </span>
+                    </div>
+                  );
+                })()}
                 {/* Clean small badge - no heavy black blanket */}
                 <div className="absolute bottom-1.5 left-1 right-1 flex justify-center">
                   <span className={`text-[9px] font-black uppercase tracking-wider text-center px-1.5 py-0.5 rounded-md bg-black/65 backdrop-blur-sm border border-white/10 ${badgeColor}`}>
@@ -293,11 +319,11 @@ else if (isFull) {
           )}
           {isEnded ? (
             <span className="bg-slate-800 text-slate-400 border border-slate-700/50 text-[9px] font-black px-2 py-0.5 rounded uppercase flex items-center gap-1">
-              MATCH HAS ENDED 🏁
+             {isTournament ? 'TOURNAMENT HAS ENDED 🏁' : 'MATCH HAS ENDED 🏁'}
             </span>
           ) : isStarted ? (
             <span className="bg-red-900/40 text-red-300 border border-red-500/30 text-[9px] font-black px-2 py-0.5 rounded uppercase flex items-center gap-1 animate-pulse">
-              MATCH HAS STARTED 🔴
+              {isTournament ? 'TOURNAMENT LIVE 🔴' : 'MATCH HAS STARTED 🔴'}
             </span>
           ) : diff > 24 * 60 * 60 * 1000 ? (
             <span className="bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 text-[9px] font-black px-2 py-0.5 rounded uppercase flex items-center gap-1 font-mono">

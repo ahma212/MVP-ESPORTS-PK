@@ -47,3 +47,32 @@ export function isMatchPlayLive(match: Match, now = Date.now()): boolean {
   const start = getMatchStartTimestamp(match, now);
   return now >= start || match.status === 'live';
 }
+export function getTournamentGapMs(match: Match): number {
+  const gapMins = Number(match.gap_minutes);
+  if (Number.isFinite(gapMins) && gapMins >= 0) return gapMins * 60 * 1000;
+  return DEFAULT_GAP_MS;
+}
+
+export function getTournamentMapWindow(match: Match, mapIndex: number) {
+  const start = getMatchStartTimestamp(match);
+  const play = MAP_PLAY_MS;
+  const gap = getTournamentGapMs(match);
+  const startsAt = start + mapIndex * (play + gap);
+  const endsAt = startsAt + play;
+  return { startsAt, endsAt };
+}
+
+export function getTournamentMapPhase(
+  match: Match,
+  mapIndex: number,
+  now = Date.now()
+) {
+  const { startsAt, endsAt } = getTournamentMapWindow(match, mapIndex);
+  if (now >= endsAt) {
+    return { phase: 'ended' as const, startsAt, endsAt, remainingMs: 0 };
+  }
+  if (now >= startsAt) {
+    return { phase: 'live' as const, startsAt, endsAt, remainingMs: endsAt - now };
+  }
+  return { phase: 'upcoming' as const, startsAt, endsAt, remainingMs: startsAt - now };
+}
