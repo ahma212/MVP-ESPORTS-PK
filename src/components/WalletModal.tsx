@@ -162,94 +162,93 @@ export const WalletModal: React.FC<WalletModalProps> = ({
     setTimeout(() => setCopiedNum(false), 2000);
   };
 
-  // Convert uploaded screenshot to a small, safe Base64 image
+  // Convert uploaded screenshot to a safe Base64 image without using
+  // object URLs or canvas. This is more reliable on Android file pickers
+  // (including the Browse / Files option).
   const handleFileUpload = (
     e: React.ChangeEvent<HTMLInputElement>,
     setTarget: (val: string) => void
   ) => {
     const input = e.currentTarget;
-const file = input.files?.[0];
+    const file = input.files?.[0];
 
-    // Remove focus from the file input to prevent unwanted mobile auto-scroll
     input.blur();
 
     if (!file) {
-      input.value = ''; return;
-    }
-
-    // Only allow image files
-    if (!file.type.startsWith('image/') && !/\.(png|jpe?g|webp)$/i.test(file.name)) {
-      alert('Please select a valid image file.');
       input.value = '';
       return;
     }
 
-    // Prevent very large files from crashing the mobile browser
+    const isSupportedImage =
+      file.type.startsWith('image/') ||
+      /\.(png|jpe?g|webp)$/i.test(file.name);
+
+    if (!isSupportedImage) {
+      alert('Please select a PNG, JPG or JPEG image file.');
+      input.value = '';
+      return;
+    }
+
     if (file.size > 5 * 1024 * 1024) {
       alert('Image is too large. Please select an image smaller than 5MB.');
       input.value = '';
       return;
     }
 
-    const objectUrl = URL.createObjectURL(file);
-    const img = new Image();
+    const reader = new FileReader();
 
-    const cleanup = () => {
-      URL.revokeObjectURL(objectUrl);
-      input.value = '';
-    };
-
-    img.onload = () => {
+    reader.onload = () => {
       try {
-        const maxWidth = 900;
+        const result = reader.result;
 
-        let width = img.naturalWidth || img.width;
-        let height = img.naturalHeight || img.height;
-
-        if (!width || !height) {
-          throw new Error('Unable to read image dimensions.');
+        if (typeof result !== 'string' || !result.startsWith('data:image/')) {
+          throw new Error('Invalid image data received from the file picker.');
         }
 
-        if (width > maxWidth) {
-          height = Math.round((height * maxWidth) / width);
-          width = maxWidth;
-        }
-
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-
-        const ctx = canvas.getContext('2d');
-
-        if (!ctx) {
-          throw new Error('Unable to create image canvas.');
-        }
-
-        ctx.drawImage(img, 0, 0, width, height);
-
-        const base64Str = canvas.toDataURL('image/jpeg', 0.65);
-
-        if (!base64Str || base64Str === 'data:,') {
-          throw new Error('Unable to process image.');
-        }
-
-        setTarget(base64Str);
+        setTarget(result);
       } catch (error) {
         console.error('Screenshot processing error:', error);
-        alert('This image could not be processed. Please select a JPG or PNG screenshot.');
+        alert('This image could not be selected. Please choose a JPG or PNG image and try again.');
       } finally {
-        cleanup();
+        input.value = '';
       }
     };
 
-    img.onerror = () => {
-      console.error('Unable to load selected image.');
-      alert('This image format is not supported. Please select a JPG or PNG screenshot.');
-      cleanup();
+    reader.onerror = () => {
+      console.error('Unable to read selected image file.');
+      alert('The selected image could not be read. Please try another image.');
+      input.value = '';
     };
 
-    img.src = objectUrl;
+    reader.onabort = () => {
+      input.value = '';
+    };
+
+    reader.readAsDataURL(file);
   };
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
   const handleDepositSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -762,7 +761,7 @@ const file = input.files?.[0];
                           <span className="text-[10px] text-gray-500">PNG, JPG or JPEG (Max 5MB)</span>
                           <input
                             type="file"
-                            accept="image/*"
+                            accept="image/png,image/jpeg,image/jpg,image/webp"
                             onChange={(e) => handleFileUpload(e, setDepositScreenshot)}
                             className="hidden"
                           />
@@ -987,7 +986,7 @@ const file = input.files?.[0];
                         <span className="text-[10px] text-gray-500">Attach screenshot of in-app profile balance</span>
                         <input
                           type="file"
-                          accept="image/*"
+                          accept="image/png,image/jpeg,image/jpg,image/webp"
                           onChange={(e) => handleFileUpload(e, setWithdrawScreenshot)}
                           className="hidden"
                         />
