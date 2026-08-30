@@ -167,7 +167,8 @@ export const WalletModal: React.FC<WalletModalProps> = ({
     e: React.ChangeEvent<HTMLInputElement>,
     setTarget: (val: string) => void
   ) => {
-    const input = e.currentTarget; const file = input.files?.[0]; const scrollContainer = input.closest('.wallet-scroll-container');
+    const input = e.currentTarget;
+const file = input.files?.[0];
 
     // Remove focus from the file input to prevent unwanted mobile auto-scroll
     input.blur();
@@ -232,7 +233,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
           throw new Error('Unable to process image.');
         }
 
-        setTarget(base64Str); setTimeout(() => { if (scrollContainer instanceof HTMLElement) scrollContainer.scrollTo({ top: scrollContainer.scrollHeight, behavior: 'smooth' }); }, 100);
+        setTarget(base64Str);
       } catch (error) {
         console.error('Screenshot processing error:', error);
         alert('This image could not be processed. Please select a JPG or PNG screenshot.');
@@ -521,7 +522,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
         </div>
 
         {/* Body Content */}
-        <div className="wallet-scroll-container p-4 overflow-y-auto overscroll-contain touch-pan-y min-h-0 flex-1 space-y-4">
+        <div className="p-4 overflow-y-auto flex-1 space-y-4">
           
           {/* TAB 1: DEPOSIT */}
           {activeTab === 'deposit' && (
