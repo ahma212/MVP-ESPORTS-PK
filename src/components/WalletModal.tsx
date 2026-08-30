@@ -174,6 +174,13 @@ export const WalletModal: React.FC<WalletModalProps> = ({
 
     input.blur();
 
+    // Clear the "file picker open" flag once a file is chosen (or cancelled)
+    try {
+      if ((window as any).__mvpMarkFilePickerOpen) {
+        // already marked on click; keep until SIGNED_IN is handled
+      }
+    } catch {}
+
     if (!file) {
       input.value = '';
       return;
@@ -206,6 +213,16 @@ export const WalletModal: React.FC<WalletModalProps> = ({
         }
 
         setTarget(result);
+
+        // After screenshot is set, scroll once so the Deposit/Withdraw button is visible
+        setTimeout(() => {
+          try {
+            const body = document.getElementById('wallet-modal-body');
+            if (body) {
+              body.scrollTo({ top: body.scrollHeight, behavior: 'smooth' });
+            }
+          } catch {}
+        }, 180);
       } catch (error) {
         console.error('Screenshot processing error:', error);
         alert('This image could not be selected. Please choose a JPG or PNG image and try again.');
@@ -498,7 +515,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
         </div>
 
         {/* Body Content */}
-        <div className="p-4 overflow-y-auto flex-1 space-y-4">
+        <div className="p-4 overflow-y-auto scroll-smooth flex-1 space-y-4" id="wallet-modal-body">
           
           {/* TAB 1: DEPOSIT */}
           {activeTab === 'deposit' && (
@@ -739,6 +756,9 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                           <input
                             type="file"
                             accept="image/png,image/jpeg,image/jpg,image/webp"
+                            onClick={() => {
+                              try { (window as any).__mvpMarkFilePickerOpen?.(); } catch {}
+                            }}
                             onChange={(e) => handleFileUpload(e, setDepositScreenshot)}
                             className="hidden"
                           />
@@ -964,6 +984,9 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                         <input
                           type="file"
                           accept="image/png,image/jpeg,image/jpg,image/webp"
+                          onClick={() => {
+                            try { (window as any).__mvpMarkFilePickerOpen?.(); } catch {}
+                          }}
                           onChange={(e) => handleFileUpload(e, setWithdrawScreenshot)}
                           className="hidden"
                         />
