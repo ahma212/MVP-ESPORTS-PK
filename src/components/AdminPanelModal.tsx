@@ -1337,6 +1337,11 @@ const pendingDepositTransactions = Array.isArray(realtimeDepositRequests) && rea
 
   const handleTypeChange = (newType: MatchType) => {
     setType(newType);
+
+    if (newType === 'solo' || newType === 'duo' || newType === 'squad') {
+      setSquadType(newType.toUpperCase() as 'SOLO' | 'DUO' | 'SQUAD');
+    }
+
     let nextMap = map;
     if (newType === 'wow') {
       nextMap = 'WOW';
@@ -1347,13 +1352,11 @@ const pendingDepositTransactions = Array.isArray(realtimeDepositRequests) && rea
     }
     setMaxSlots(getDefaultMaxSlots(nextMap, newType));
 
-    if (newType === 'wow' || newType !== 'tournament') {
-      // Clear/Reset multi-map state safely for single match formats
+    if (newType !== 'tournament') {
       setTournamentMatchCount(1);
       setMapBanners(['', '', '', '', '', '']);
       setMapMaxSlots([100, 100, 100, 100, 100, 100]);
-    } else if (newType === 'tournament') {
-      // Restore normal tournament defaults
+    } else {
       setTournamentMatchCount(3);
       setTournamentMaps(['Erangel', 'Miramar', 'Rondo', 'Livik', 'Sanhok', 'Vikendi']);
       setMapBanners(['', '', '', '', '', '']);
@@ -2236,6 +2239,10 @@ const [isPublishingRoom, setIsPublishingRoom] = useState<boolean>(false);
     setEditingMatch(m);
     setTitle(m.title || '');
     setType(m.type || 'squad');
+    setSquadType(
+      m.squad_type ||
+      (m.type === 'solo' ? 'SOLO' : m.type === 'duo' ? 'DUO' : 'SQUAD')
+    );
     setMap(m.map || (m.type === 'wow' ? 'WOW' : 'Erangel'));
     setMatchTime(m.match_time || '');
     if (m.start_timestamp) {
@@ -5378,45 +5385,84 @@ try {
 
                   <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <label className="text-[11px] font-bold text-gray-300 block mb-1">Match Type</label>
+                      <label className="text-[11px] font-bold text-gray-300 block mb-1">Type</label>
                       <select
-                        value={type}
-                        onChange={(e) => handleTypeChange(e.target.value as MatchType)}
+                        value={type === 'tournament' ? 'tournament' : 'match'}
+                        onChange={(e) => {
+                          if (e.target.value === 'tournament') {
+                            handleTypeChange('tournament');
+                          } else {
+                            const currentMode =
+                              type === 'solo' || type === 'duo' || type === 'squad'
+                                ? type
+                                : squadType.toLowerCase() === 'solo'
+                                  ? 'solo'
+                                  : squadType.toLowerCase() === 'duo'
+                                    ? 'duo'
+                                    : 'squad';
+                            handleTypeChange(currentMode);
+                          }
+                        }}
                         className="w-full p-2 rounded-lg bg-[#030a16] border border-gray-700 text-white text-xs"
                       >
-                        <option value="squad">Squad</option>
-                        <option value="duo">Duo</option>
-                        <option value="solo">Solo</option>
-                        <option value="tournament">Grand Tournament</option>
-                        <option value="tdm">TDM Warehouse</option>
-                        <option value="wow">WOW Match</option>
+                        <option value="match">Match</option>
+                        <option value="tournament">Tournament</option>
                       </select>
                     </div>
 
-                    <div>
-                      <label className="text-[11px] font-bold text-gray-300 block mb-1">Primary Map</label>
+                    {type === 'tournament' ? (
+                      <div>
+                        <label className="text-[11px] font-bold text-gray-300 block mb-1">Series Length (Matches)</label>
+                        <select
+                          value={tournamentMatchCount}
+                          onChange={(e) => setTournamentMatchCount(Number(e.target.value))}
+                          className="w-full p-2 rounded-lg bg-[#030a16] border border-gray-700 text-white text-xs"
+                        >
+                          <option value={1}>1 Match</option>
+                          <option value={2}>2 Matches</option>
+                          <option value={3}>3 Matches</option>
+                          <option value={4}>4 Matches</option>
+                          <option value={5}>5 Matches</option>
+                          <option value={6}>6 Matches</option>
+                        </select>
+                      </div>
+                    ) : (
+                      <div>
+                        <label className="text-[11px] font-bold text-gray-300 block mb-1">Mode</label>
+                        <select
+                          value={type === 'solo' || type === 'duo' || type === 'squad' ? type : squadType.toLowerCase()}
+                          onChange={(e) => handleTypeChange(e.target.value as MatchType)}
+                          className="w-full p-2 rounded-lg bg-[#030a16] border border-gray-700 text-white text-xs"
+                        >
+                          <option value="solo">Solo</option>
+                          <option value="duo">Duo</option>
+                          <option value="squad">Squad</option>
+                        </select>
+                      </div>
+                    )}
+                  </div>
+
+                  {type !== 'tournament' && (
+                    <div className="mt-2">
+                      <label className="text-[11px] font-bold text-gray-300 block mb-1">Map</label>
                       <select
                         value={map}
                         onChange={(e) => handleMapChange(e.target.value as MapType)}
                         className="w-full p-2 rounded-lg bg-[#030a16] border border-gray-700 text-white text-xs"
                       >
-                        {type === 'wow' ? (
-                          <option value="WOW">WOW</option>
-                        ) : (
-                          <>
-                            <option value="Erangel">Erangel</option>
-                            <option value="Miramar">Miramar</option>
-                            <option value="Sanhok">Sanhok</option>
-                            <option value="Livik">Livik</option>
-                            <option value="Karakin">Karakin</option>
-                            <option value="Nusa">Nusa</option>
-                            <option value="Warehouse">Warehouse</option>
-                            <option value="WOW">WOW</option>
-                          </>
-                        )}
+                        <option value="Erangel">Erangel</option>
+                        <option value="Miramar">Miramar</option>
+                        <option value="Sanhok">Sanhok</option>
+                        <option value="Livik">Livik</option>
+                        <option value="Karakin">Karakin</option>
+                        <option value="Nusa">Nusa</option>
+                        <option value="Warehouse">Warehouse</option>
+                        <option value="Rondo">Rondo</option>
+                        <option value="Vikendi">Vikendi</option>
+                        <option value="WOW">WOW</option>
                       </select>
                     </div>
-                  </div>
+                  )}
 
                   {renderSlotSelectorGrid()}
 
@@ -5713,16 +5759,22 @@ try {
                 <div>
                   <label className="text-[11px] font-bold text-gray-300 block mb-1">Type</label>
                   <select
-                    value={type}
-                    onChange={(e) => handleTypeChange(e.target.value as MatchType)}
+                    value={type === 'tournament' ? 'tournament' : 'match'}
+                    onChange={(e) => {
+                      if (e.target.value === 'tournament') {
+                        handleTypeChange('tournament');
+                      } else {
+                        handleTypeChange(
+                          type === 'solo' || type === 'duo' || type === 'squad'
+                            ? type
+                            : 'squad'
+                        );
+                      }
+                    }}
                     className="w-full p-2 rounded-lg bg-[#07192e] border border-gray-700 text-white text-xs"
                   >
-                    <option value="squad">Squad</option>
-                    <option value="duo">Duo</option>
-                    <option value="solo">Solo</option>
-                    <option value="tournament">Grand Tournament</option>
-                    <option value="tdm">TDM Warehouse</option>
-                    <option value="wow">WOW Match</option>
+                    <option value="match">Match</option>
+                    <option value="tournament">Tournament</option>
                   </select>
                 </div>
 
@@ -5735,41 +5787,52 @@ try {
                       className="w-full p-2 rounded-lg bg-[#07192e] border border-gray-700 text-white text-xs"
                     >
                       <option value={1}>1 Match</option>
-                      <option value={2}>2 Matches (Double Header)</option>
-                      <option value={3}>3 Matches (Standard Series)</option>
+                      <option value={2}>2 Matches</option>
+                      <option value={3}>3 Matches</option>
                       <option value={4}>4 Matches</option>
                       <option value={5}>5 Matches</option>
-                      <option value={6}>6 Matches (Grand Finale)</option>
+                      <option value={6}>6 Matches</option>
                     </select>
                   </div>
                 ) : (
                   <div>
-                    <label className="text-[11px] font-bold text-gray-300 block mb-1">Map</label>
+                    <label className="text-[11px] font-bold text-gray-300 block mb-1">Mode</label>
                     <select
-                      value={map}
-                      onChange={(e) => handleMapChange(e.target.value as MapType)}
+                      value={type === 'solo' || type === 'duo' || type === 'squad' ? type : 'squad'}
+                      onChange={(e) => handleTypeChange(e.target.value as MatchType)}
                       className="w-full p-2 rounded-lg bg-[#07192e] border border-gray-700 text-white text-xs"
                     >
-                      {type === 'wow' ? (
-                        <option value="WOW">WOW</option>
-                      ) : (
-                        <>
-                          <option value="Erangel">Erangel</option>
-                          <option value="Miramar">Miramar</option>
-                          <option value="Sanhok">Sanhok</option>
-                          <option value="Livik">Livik</option>
-                          <option value="Karakin">Karakin</option>
-                          <option value="Nusa">Nusa</option>
-                          <option value="Warehouse">Warehouse</option>
-                          <option value="WOW">WOW</option>
-                        </>
-                      )}
+                      <option value="solo">Solo</option>
+                      <option value="duo">Duo</option>
+                      <option value="squad">Squad</option>
                     </select>
                   </div>
                 )}
               </div>
 
-              {(type === 'tournament' || type === 'wow' || type === 'tdm') && (
+              {type !== 'tournament' && (
+                <div className="mt-2">
+                  <label className="text-[11px] font-bold text-gray-300 block mb-1">Map</label>
+                  <select
+                    value={map}
+                    onChange={(e) => handleMapChange(e.target.value as MapType)}
+                    className="w-full p-2 rounded-lg bg-[#07192e] border border-gray-700 text-white text-xs"
+                  >
+                    <option value="Erangel">Erangel</option>
+                    <option value="Miramar">Miramar</option>
+                    <option value="Sanhok">Sanhok</option>
+                    <option value="Livik">Livik</option>
+                    <option value="Karakin">Karakin</option>
+                    <option value="Nusa">Nusa</option>
+                    <option value="Warehouse">Warehouse</option>
+                    <option value="Rondo">Rondo</option>
+                    <option value="Vikendi">Vikendi</option>
+                    <option value="WOW">WOW</option>
+                  </select>
+                </div>
+              )}
+
+              {type === 'tournament' && (
                 <div className="grid grid-cols-2 gap-2 bg-[#030a16]/40 p-3 rounded-lg border border-gray-800">
                   <div>
                     <label className="text-[11px] font-bold text-gray-300 block mb-1">
