@@ -1,7 +1,8 @@
 @import "tailwindcss";
  
 /* Auto-scroll positioning enhancement for mobile keyboards and text inputs */
-input, textarea, [contenteditable="true"] {
+/* File inputs are excluded so selecting a screenshot does not force Wallet scrolling */
+input:not([type="file"]), textarea, [contenteditable="true"] {
   scroll-margin-top: 100px;
   scroll-margin-bottom: 120px;
 }

@@ -162,55 +162,92 @@ export const WalletModal: React.FC<WalletModalProps> = ({
     setTimeout(() => setCopiedNum(false), 2000);
   };
 
-  // Convert File to Base64 String with automatic high-ratio compression
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, setTarget: (val: string) => void) => {
+  // Convert uploaded screenshot to a small, safe Base64 image
+  const handleFileUpload = (
+    e: React.ChangeEvent<HTMLInputElement>,
+    setTarget: (val: string) => void
+  ) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const objectUrl = URL.createObjectURL(file);
-      const img = new Image();
-      img.onload = () => {
-        try {
-          const canvas = document.createElement('canvas');
-          const maxWidth = 600;
-          let width = img.width;
-          let height = img.height;
 
-          if (width > maxWidth) {
-            height = Math.round((height * maxWidth) / width);
-            width = maxWidth;
-          }
+    // Remove focus from the file input to prevent unwanted mobile auto-scroll
+    e.currentTarget.blur();
 
-          canvas.width = width;
-          canvas.height = height;
-
-          const ctx = canvas.getContext('2d');
-          if (!ctx) {
-            const reader = new FileReader();
-            reader.onloadend = () => setTarget(reader.result as string);
-            reader.readAsDataURL(file);
-            URL.revokeObjectURL(objectUrl);
-            return;
-          }
-
-          ctx.drawImage(img, 0, 0, width, height);
-          const base64Str = canvas.toDataURL('image/jpeg', 0.5);
-          setTarget(base64Str);
-          URL.revokeObjectURL(objectUrl);
-        } catch (err) {
-          const reader = new FileReader();
-          reader.onloadend = () => setTarget(reader.result as string);
-          reader.readAsDataURL(file);
-          URL.revokeObjectURL(objectUrl);
-        }
-      };
-      img.onerror = () => {
-        const reader = new FileReader();
-        reader.onloadend = () => setTarget(reader.result as string);
-        reader.readAsDataURL(file);
-        URL.revokeObjectURL(objectUrl);
-      };
-      img.src = objectUrl;
+    if (!file) {
+      return;
     }
+
+    // Only allow image files
+    if (!file.type.startsWith('image/')) {
+      alert('Please select a valid image file.');
+      e.currentTarget.value = '';
+      return;
+    }
+
+    // Prevent very large files from crashing the mobile browser
+    if (file.size > 5 * 1024 * 1024) {
+      alert('Image is too large. Please select an image smaller than 5MB.');
+      e.currentTarget.value = '';
+      return;
+    }
+
+    const objectUrl = URL.createObjectURL(file);
+    const img = new Image();
+
+    const cleanup = () => {
+      URL.revokeObjectURL(objectUrl);
+      e.currentTarget.value = '';
+    };
+
+    img.onload = () => {
+      try {
+        const maxWidth = 900;
+
+        let width = img.naturalWidth || img.width;
+        let height = img.naturalHeight || img.height;
+
+        if (!width || !height) {
+          throw new Error('Unable to read image dimensions.');
+        }
+
+        if (width > maxWidth) {
+          height = Math.round((height * maxWidth) / width);
+          width = maxWidth;
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+
+        const ctx = canvas.getContext('2d');
+
+        if (!ctx) {
+          throw new Error('Unable to create image canvas.');
+        }
+
+        ctx.drawImage(img, 0, 0, width, height);
+
+        const base64Str = canvas.toDataURL('image/jpeg', 0.65);
+
+        if (!base64Str || base64Str === 'data:,') {
+          throw new Error('Unable to process image.');
+        }
+
+        setTarget(base64Str);
+      } catch (error) {
+        console.error('Screenshot processing error:', error);
+        alert('This image could not be processed. Please select a JPG or PNG screenshot.');
+      } finally {
+        cleanup();
+      }
+    };
+
+    img.onerror = () => {
+      console.error('Unable to load selected image.');
+      alert('This image format is not supported. Please select a JPG or PNG screenshot.');
+      cleanup();
+    };
+
+    img.src = objectUrl;
   };
 
   const handleDepositSubmit = async (e: React.FormEvent) => {
