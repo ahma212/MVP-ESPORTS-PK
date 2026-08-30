@@ -2390,22 +2390,34 @@ const handleOpenAdmin = () => {
     await refreshData(true, true);
 
 // Trigger global notification (sirf 1 baar)
+    const matchType = String(newMatchData.type || 'squad').toLowerCase();
     try {
-     await createNotification({
+      let activityLabel = 'Match';
+      if (matchType === 'tournament') activityLabel = 'Tournament';
+      else if (matchType === 'solo') activityLabel = 'Solo Match';
+      else if (matchType === 'duo') activityLabel = 'Duo Match';
+      else if (matchType === 'squad') activityLabel = 'Squad Match';
+      else if (matchType === 'tdm') activityLabel = 'TDM Match';
+      else if (matchType === 'wow') activityLabel = 'WOW Match';
+
+      const mapLabel = String(newMatchData.map || newMatchRaw.map || 'Map');
+
+      await createNotification({
         user_id: null,
-        title: "New Tournament Available",
-        message: `New Tournament Available! "${newMatchRaw.title}" is now open for booking.`,
+        title: matchType === 'tournament' ? 'New Tournament Available' : `New ${activityLabel} Available`,
+        message: matchType === 'tournament'
+          ? `New Tournament Available! "${newMatchRaw.title}" is now open for booking. Map: ${mapLabel}.`
+          : `${activityLabel} "${newMatchRaw.title}" is now open for booking. Map: ${mapLabel}.`,
         is_read: false,
         type: 'announcement',
         match_id: newMatchRaw.id,
         image: newMatchRaw.banner_url || undefined
       });
-
     } catch (err) {
       console.warn('Error creating match notification:', err);
     }
 
-    showToast(`Tournament "${cleanMatch.title}" created successfully!`);
+    showToast(`${matchType === 'tournament' ? 'Tournament' : 'Match'} "${cleanMatch.title}" created successfully!`);
   };
 
   const handlePublishRoomDetails = async (
