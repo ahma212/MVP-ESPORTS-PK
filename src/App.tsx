@@ -2389,25 +2389,39 @@ const handleOpenAdmin = () => {
     // Refresh immediately to pull matches from Supabase
     await refreshData(true, true);
 
-// Trigger global notification (sirf 1 baar)
-    const matchType = String(newMatchData.type || 'squad').toLowerCase();
+    // Trigger global notification (sirf 1 baar)
     try {
-      let activityLabel = 'Match';
-      if (matchType === 'tournament') activityLabel = 'Tournament';
-      else if (matchType === 'solo') activityLabel = 'Solo Match';
-      else if (matchType === 'duo') activityLabel = 'Duo Match';
-      else if (matchType === 'squad') activityLabel = 'Squad Match';
-      else if (matchType === 'tdm') activityLabel = 'TDM Match';
-      else if (matchType === 'wow') activityLabel = 'WOW Match';
+      const matchType = String(newMatchRaw.type || '').toLowerCase();
+      const isTournament = matchType === 'tournament';
+      const mapLabel = String(newMatchRaw.map || 'Map');
+      const squadLabel = String(newMatchRaw.squad_type || '').toUpperCase();
 
-      const mapLabel = String(newMatchData.map || newMatchRaw.map || 'Map');
+      const activityLabel = isTournament
+        ? 'Tournament'
+        : matchType === 'solo'
+          ? 'Solo Match'
+          : matchType === 'duo'
+            ? 'Duo Match'
+            : matchType === 'squad'
+              ? 'Squad Match'
+              : matchType === 'tdm'
+                ? 'TDM Match'
+                : matchType === 'wow'
+                  ? 'WOW Match'
+                  : 'Match';
+
+      const formatDetails = isTournament
+        ? `Map: ${mapLabel}${squadLabel ? ` • ${squadLabel}` : ''}`
+        : `Map: ${mapLabel}${squadLabel ? ` • ${squadLabel}` : ''}`;
 
       await createNotification({
         user_id: null,
-        title: matchType === 'tournament' ? 'New Tournament Available' : `New ${activityLabel} Available`,
-        message: matchType === 'tournament'
-          ? `New Tournament Available! "${newMatchRaw.title}" is now open for booking. Map: ${mapLabel}.`
-          : `${activityLabel} "${newMatchRaw.title}" is now open for booking. Map: ${mapLabel}.`,
+        title: isTournament
+          ? 'New Tournament Available'
+          : `New ${activityLabel} Available`,
+        message: isTournament
+          ? `New Tournament Available! "${newMatchRaw.title}" is now open for booking. ${formatDetails}.`
+          : `${activityLabel} "${newMatchRaw.title}" is now open for booking. ${formatDetails}.`,
         is_read: false,
         type: 'announcement',
         match_id: newMatchRaw.id,
@@ -2417,7 +2431,9 @@ const handleOpenAdmin = () => {
       console.warn('Error creating match notification:', err);
     }
 
-    showToast(`${matchType === 'tournament' ? 'Tournament' : 'Match'} "${cleanMatch.title}" created successfully!`);
+    showToast(
+      `${String(newMatchRaw.type || '').toLowerCase() === 'tournament' ? 'Tournament' : 'Match'} "${cleanMatch.title}" created successfully!`
+    );
   };
 
   const handlePublishRoomDetails = async (
