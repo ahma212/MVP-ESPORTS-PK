@@ -468,7 +468,7 @@ export async function syncProfilesFromMatchResult(matchRes: MatchResult) {
               .eq('username', matchedProf.username);
           }
           }
-        } catch (supabaseErr) {
+         catch (supabaseErr) {
           console.error(
             '[SYNC ERROR] Failed to push stats update to Supabase:',
             supabaseErr
