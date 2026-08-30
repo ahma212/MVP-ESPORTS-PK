@@ -73,8 +73,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
   const [depositErrorMsg, setDepositErrorMsg] = useState<string | null>(null);
   const [isSubmittingDeposit, setIsSubmittingDeposit] = useState<boolean>(false);
   const depositSubmittingRef = useRef<boolean>(false);
-     const scrollBodyRef = useRef<HTMLDivElement>(null);
-  const hasAutoScrolledDepositRef = useRef(false);
+
   // Withdrawal Form state
   const [withdrawMethod, setWithdrawMethod] = useState<'JazzCash' | 'EasyPaisa' | 'SadaPay' | 'NayaPay'>('JazzCash');
   const [withdrawAmount, setWithdrawAmount] = useState<number | string>(300);
@@ -152,26 +151,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
     const timer = setInterval(updateCooldowns, 1000);
     return () => clearInterval(timer);
   }, [lastDepositTime, lastWithdrawTime]);
-     // Auto-scroll once after deposit screenshot is selected so Deposit button is visible
-  useEffect(() => {
-    if (depositScreenshot && activeTab === 'deposit' && !hasAutoScrolledDepositRef.current) {
-      hasAutoScrolledDepositRef.current = true;
-      requestAnimationFrame(() => {
-        setTimeout(() => {
-          const el = scrollBodyRef.current;
-          if (el) {
-            el.scrollTo({
-              top: el.scrollHeight,
-              behavior: 'smooth'
-            });
-          }
-        }, 120);
-      });
-    }
-    if (!depositScreenshot) {
-      hasAutoScrolledDepositRef.current = false;
-    }
-  }, [depositScreenshot, activeTab]);
+
   const [copiedNum, setCopiedNum] = useState<boolean>(false);
 
   if (!isOpen) return null;
@@ -182,77 +162,71 @@ export const WalletModal: React.FC<WalletModalProps> = ({
     setTimeout(() => setCopiedNum(false), 2000);
   };
 
-  // Convert uploaded screenshot to a safe Base64 image.
-  // Extra try/catch + e.target for reliable Android Browse / Files picker.
+  // Convert uploaded screenshot to a safe Base64 image without using
+  // object URLs or canvas. This is more reliable on Android file pickers
+  // (including the Browse / Files option).
   const handleFileUpload = (
     e: React.ChangeEvent<HTMLInputElement>,
     setTarget: (val: string) => void
   ) => {
-    try {
-      const input = e.target as HTMLInputElement;
-      const file = input?.files?.[0];
+    const input = e.currentTarget;
+    const file = input.files?.[0];
 
-      if (input) {
-        input.blur();
-      }
+    input.blur();
 
-      if (!file) {
-        if (input) input.value = '';
-        return;
-      }
-
-      const isSupportedImage =
-        (file.type && file.type.startsWith('image/')) ||
-        /\.(png|jpe?g|webp)$/i.test(file.name || '');
-
-      if (!isSupportedImage) {
-        alert('Please select a PNG, JPG or JPEG image file.');
-        if (input) input.value = '';
-        return;
-      }
-
-      if (file.size > 5 * 1024 * 1024) {
-        alert('Image is too large. Please select an image smaller than 5MB.');
-        if (input) input.value = '';
-        return;
-      }
-
-      const reader = new FileReader();
-
-      reader.onload = () => {
-        try {
-          const result = reader.result;
-          if (typeof result !== 'string' || !result.startsWith('data:image/')) {
-            throw new Error('Invalid image data received from the file picker.');
-          }
-          setTarget(result);
-        } catch (error) {
-          console.error('Screenshot processing error:', error);
-          alert('This image could not be selected. Please choose a JPG or PNG image and try again.');
-        } finally {
-          if (input) input.value = '';
-        }
-      };
-
-      reader.onerror = () => {
-        console.error('Unable to read selected image file.');
-        alert('The selected image could not be read. Please try another image.');
-        if (input) input.value = '';
-      };
-
-      reader.onabort = () => {
-        if (input) input.value = '';
-      };
-
-      reader.readAsDataURL(file);
-    } catch (err) {
-      console.error('File upload outer error (Browse path):', err);
-      alert('Could not open the selected image. Please try again or choose a different photo.');
-      try {
-        (e.target as HTMLInputElement).value = '';
-      } catch (_) {}
+    if (!file) {
+      input.value = '';
+      return;
     }
+
+    const isSupportedImage =
+      file.type.startsWith('image/') ||
+      /\.(png|jpe?g|webp)$/i.test(file.name);
+
+    if (!isSupportedImage) {
+      alert('Please select a PNG, JPG or JPEG image file.');
+      input.value = '';
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      alert('Image is too large. Please select an image smaller than 5MB.');
+      input.value = '';
+      return;
+    }
+
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      try {
+        const result = reader.result;
+
+        if (typeof result !== 'string' || !result.startsWith('data:image/')) {
+          throw new Error('Invalid image data received from the file picker.');
+        }
+
+        setTarget(result);
+      } catch (error) {
+        console.error('Screenshot processing error:', error);
+        alert('This image could not be selected. Please choose a JPG or PNG image and try again.');
+      } finally {
+        input.value = '';
+      }
+    };
+
+    reader.onerror = () => {
+      console.error('Unable to read selected image file.');
+      alert('The selected image could not be read. Please try another image.');
+      input.value = '';
+    };
+
+    reader.onabort = () => {
+      input.value = '';
+    };
+
+    reader.readAsDataURL(file);
   };
+
   const handleDepositSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -524,11 +498,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
         </div>
 
         {/* Body Content */}
-               <div
-          ref={scrollBodyRef}
-          className="p-4 overflow-y-auto flex-1 space-y-4 scroll-smooth"
-          style={{ WebkitOverflowScrolling: 'touch' }}
-        >
+        <div className="p-4 overflow-y-auto flex-1 space-y-4">
           
           {/* TAB 1: DEPOSIT */}
           {activeTab === 'deposit' && (
