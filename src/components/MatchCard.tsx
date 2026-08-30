@@ -204,24 +204,25 @@ export const MatchCard: React.FC<MatchCardProps> = ({
     if (isTournament) {
       const mapsLen = activeMaps.length;
       let gridColsClass = 'grid-cols-3';
-      let cellHeight = 'h-28';
-      
+      let imageFrameClass = 'aspect-[4/3] min-h-[150px] sm:min-h-[180px]';
+
       if (mapsLen === 1) {
         gridColsClass = 'grid-cols-1';
-        cellHeight = 'h-40 sm:h-44';
+        imageFrameClass = 'aspect-[16/9] min-h-[220px] sm:min-h-[280px]';
       } else if (mapsLen === 2) {
         gridColsClass = 'grid-cols-2';
-        cellHeight = 'h-32 sm:h-36';
+        imageFrameClass = 'aspect-[4/3] min-h-[190px] sm:min-h-[230px]';
       } else if (mapsLen === 3) {
+        // VIP 3-map layout: maximize the visible picture area.
         gridColsClass = 'grid-cols-3';
-        cellHeight = 'h-28 sm:h-32';
+        imageFrameClass = 'aspect-[4/3] min-h-[185px] sm:min-h-[230px] md:min-h-[250px]';
       } else if (mapsLen === 4) {
         gridColsClass = 'grid-cols-2';
-        cellHeight = 'h-24 sm:h-28';
+        imageFrameClass = 'aspect-[4/3] min-h-[170px] sm:min-h-[210px]';
       } else {
-        // 5 or 6 maps
+        // 5 or 6 maps: keep a clean 3-column layout with readable images.
         gridColsClass = 'grid-cols-3';
-        cellHeight = 'h-20 sm:h-24';
+        imageFrameClass = 'aspect-[4/3] min-h-[135px] sm:min-h-[165px]';
       }
 
       imageArea = (
@@ -238,7 +239,7 @@ export const MatchCard: React.FC<MatchCardProps> = ({
             const isNextUpcoming = idx === nextMapIdx && mapPhase.phase === 'upcoming';
 
             return (
-              <div key={idx} className={`relative rounded-lg overflow-hidden border border-[#00e5ff]/25 ${cellHeight} group bg-black/40 shadow-[0_0_12px_rgba(0,229,255,0.08)]`}>
+              <div key={idx} className={`relative rounded-xl overflow-hidden border border-[#00e5ff]/30 ${imageFrameClass} group bg-black/40 shadow-[0_0_18px_rgba(0,229,255,0.12)]`}>
                 <img 
                   src={bannerUrl} 
                   alt={mapName} 
@@ -249,27 +250,27 @@ export const MatchCard: React.FC<MatchCardProps> = ({
                     (e.target as HTMLImageElement).src = getMapImage(mapName);
                   }}
                 />
-                {/* Status: ENDED / STARTED / only next map STARTS IN */}
-                <div className="absolute top-1 left-1 right-1 flex justify-center">
+                {/* Status: keep timer/status clear of the map title and preserve image focus */}
+                <div className="absolute top-2 left-2 right-2 flex justify-between items-start gap-2 pointer-events-none">
                   {mapPhase.phase === 'ended' && (
-                    <span className="text-[8px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded-md border bg-slate-900/80 text-slate-200 border-slate-500/40">
+                    <span className="text-[8px] sm:text-[9px] font-black uppercase tracking-wide px-2 py-1 rounded-md border bg-slate-900/85 text-slate-200 border-slate-500/40 shadow-lg backdrop-blur-sm">
                       ENDED
                     </span>
                   )}
                   {mapPhase.phase === 'live' && (
-                    <span className="text-[8px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded-md border bg-red-700/85 text-white border-red-300/40 animate-pulse">
+                    <span className="text-[8px] sm:text-[9px] font-black uppercase tracking-wide px-2 py-1 rounded-md border bg-red-700/90 text-white border-red-300/40 animate-pulse shadow-lg backdrop-blur-sm">
                       STARTED 🔴
                     </span>
                   )}
                   {isNextUpcoming && (
-                    <span className="text-[8px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded-md border bg-cyan-900/80 text-cyan-100 border-cyan-400/40 font-mono">
+                    <span className="ml-auto text-[8px] sm:text-[9px] font-black uppercase tracking-wide px-2 py-1 rounded-md border bg-cyan-950/85 text-cyan-100 border-cyan-400/40 font-mono shadow-lg backdrop-blur-sm whitespace-nowrap">
                       STARTS IN {formatCountdown(mapPhase.remainingMs)}
                     </span>
                   )}
                 </div>
-                {/* Map name bottom */}
-                <div className="absolute bottom-1.5 left-1 right-1 flex justify-center">
-                  <span className={`text-[9px] font-black uppercase tracking-wider text-center px-1.5 py-0.5 rounded-md bg-black/65 backdrop-blur-sm border border-white/10 ${badgeColor}`}>
+                {/* Map name: bottom-left so it never collides with the timer */}
+                <div className="absolute bottom-2 left-2 right-2 flex justify-start pointer-events-none">
+                  <span className={`max-w-[92%] text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-left px-2 py-1 rounded-md bg-black/72 backdrop-blur-md border border-white/15 shadow-lg ${badgeColor}`}>
                     {idx + 1}. {mapName}
                   </span>
                 </div>
