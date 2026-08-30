@@ -209,25 +209,26 @@ export const MatchCard: React.FC<MatchCardProps> = ({
       
       if (mapsLen === 1) {
         gridClass = 'grid-cols-1';
-        itemClass = 'aspect-[16/9] min-h-[220px] sm:min-h-[280px]';
+        itemClass = 'aspect-[16/9] min-h-[220px] sm:min-h-[280px] min-w-0';
       } else if (mapsLen === 2) {
         gridClass = 'grid-cols-2';
-        itemClass = 'aspect-[4/3] min-h-[180px] sm:min-h-[230px]';
+        itemClass = 'aspect-[4/3] min-h-[190px] sm:min-h-[245px] min-w-0';
       } else if (mapsLen === 3) {
-        // 3 matches: two large pictures on top, final match full-width below.
+        // 3 matches: two large, clearly separated pictures on top + one large picture below.
+        // min-w-0 is important so long badges/text can never force an image outside the card.
         gridClass = 'grid-cols-2';
-        itemClass = 'aspect-[4/3] min-h-[175px] sm:min-h-[225px]';
+        itemClass = 'aspect-[4/3] min-h-[205px] sm:min-h-[255px] min-w-0';
       } else if (mapsLen === 4) {
         gridClass = 'grid-cols-2';
-        itemClass = 'aspect-[4/3] min-h-[165px] sm:min-h-[205px]';
+        itemClass = 'aspect-[4/3] min-h-[185px] sm:min-h-[225px] min-w-0';
       } else {
-        // 5 or 6 maps: three columns, still prioritizing visible image area.
+        // 5 or 6 maps: three columns while keeping every image inside its grid cell.
         gridClass = 'grid-cols-3';
-        itemClass = 'aspect-[4/3] min-h-[135px] sm:min-h-[165px]';
+        itemClass = 'aspect-[4/3] min-h-[145px] sm:min-h-[175px] min-w-0';
       }
 
       imageArea = (
-        <div className={`grid ${gridClass} gap-2.5 sm:gap-3 my-3`}>
+        <div className={`grid ${gridClass} gap-2.5 sm:gap-3 my-4 w-full min-w-0`}>
           {activeMaps.map((mapName, idx) => {
             const bannerUrl = match.map_banners?.[idx] || getMapImage(mapName);
             const badgeColors = [
@@ -240,11 +241,18 @@ export const MatchCard: React.FC<MatchCardProps> = ({
             const isNextUpcoming = idx === nextMapIdx && mapPhase.phase === 'upcoming';
 
             return (
-              <div key={idx} className={`relative ${mapsLen === 3 && idx === 2 ? 'col-span-2 aspect-[16/8] min-h-[190px] sm:min-h-[245px]' : itemClass} rounded-xl overflow-hidden border-2 border-[#00e5ff]/30 group bg-[#020710] shadow-[0_0_20px_rgba(0,229,255,0.12)]`}>
+              <div
+                key={idx}
+                className={`relative min-w-0 w-full ${
+                  mapsLen === 3 && idx === 2
+                    ? 'col-span-2 aspect-[16/8] min-h-[225px] sm:min-h-[300px]'
+                    : itemClass
+                } rounded-xl overflow-hidden border-2 border-[#00e5ff]/45 bg-[#020710] group shadow-[0_0_20px_rgba(0,229,255,0.12)]`}
+              >
                 <img 
                   src={bannerUrl} 
                   alt={mapName} 
-                  className="w-full h-full object-cover object-center transform group-hover:scale-105 transition-transform duration-300"
+                  className="absolute inset-0 block w-full h-full min-w-0 object-cover object-center transform group-hover:scale-105 transition-transform duration-300"
                   loading="lazy"
                   referrerPolicy="no-referrer"
                   onError={(e) => {
@@ -252,7 +260,7 @@ export const MatchCard: React.FC<MatchCardProps> = ({
                   }}
                 />
                 {/* Match status / gap timer: kept in its own top-right badge so it never overlaps the map name. */}
-                <div className="absolute top-2 left-2 right-2 flex justify-end items-start pointer-events-none">
+                <div className="absolute inset-x-0 top-0 z-10 flex justify-end items-start p-2 pointer-events-none">
                   {mapPhase.phase === 'ended' && (
                     <span className="text-[8px] sm:text-[9px] font-black uppercase tracking-wide px-2 py-1 rounded-md border bg-slate-950/90 text-slate-100 border-slate-400/40 shadow-lg backdrop-blur-sm">
                       ENDED
@@ -270,8 +278,8 @@ export const MatchCard: React.FC<MatchCardProps> = ({
                   )}
                 </div>
                 {/* Map name: own bottom-left badge, clearly separated from the timer. */}
-                <div className="absolute bottom-2 left-2 right-2 flex justify-start pointer-events-none">
-                  <span className={`max-w-[92%] text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-left px-2 py-1 rounded-md bg-black/75 backdrop-blur-md border border-white/15 shadow-lg ${badgeColor}`}>
+                <div className="absolute inset-x-0 bottom-0 z-10 flex justify-start p-2 pointer-events-none">
+                  <span className={`max-w-[calc(100%-0.25rem)] truncate text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-left px-2.5 py-1.5 rounded-md bg-black/80 backdrop-blur-md border border-white/20 shadow-lg ${badgeColor}`}>
                     {idx + 1}. {mapName}
                   </span>
                 </div>
@@ -319,7 +327,7 @@ export const MatchCard: React.FC<MatchCardProps> = ({
         isBookedByMe ? 'border-[#00e5ff] ring-1 ring-[#00e5ff]/50' : 'border-[#00e5ff]/30'
       } ${
         isTournament 
-          ? 'p-5 md:p-6 min-h-[560px] md:min-h-[620px] border-amber-500/30 shadow-amber-500/10' 
+          ? 'p-5 md:p-6 min-h-[600px] md:min-h-[680px] border-amber-500/30 shadow-amber-500/10 min-w-0' 
           : 'p-3'
       }`}
     >
