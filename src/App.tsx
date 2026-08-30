@@ -200,6 +200,11 @@ export default function App() {
     isAdminUnlockedRef.current = val;
     setIsAdminUnlockedState(val);
   };
+  // When Android/iOS system file picker (Browse) opens, the app backgrounds.
+  // On return Supabase often fires SIGNED_IN again. This flag prevents
+  // resetting the whole UI (which was closing Wallet and sending user to Home).
+  const skipHomeResetOnSignedInRef = useRef<boolean>(false);
+  const filePickerOpenRef = useRef<boolean>(false);
   const [isSupportOpen, setIsSupportOpen] = useState<boolean>(false);
   const [isAnnouncementsOpen, setIsAnnouncementsOpen] = useState<boolean>(false);
   const [isWatchStreamsOpen, setIsWatchStreamsOpen] = useState<boolean>(false);
@@ -239,6 +244,22 @@ export default function App() {
     setSearchQuery('');
     setMatchTab('all');
   };
+
+  // Allow WalletModal (or any child) to mark that the native file picker is opening
+  useEffect(() => {
+    (window as any).__mvpMarkFilePickerOpen = () => {
+      filePickerOpenRef.current = true;
+      skipHomeResetOnSignedInRef.current = true;
+      // auto-clear after 60s in case change event never fires
+      setTimeout(() => {
+        filePickerOpenRef.current = false;
+        skipHomeResetOnSignedInRef.current = false;
+      }, 60000);
+    };
+    return () => {
+      try { delete (window as any).__mvpMarkFilePickerOpen; } catch {}
+    };
+  }, []);
 
   const restoreSavedUiStates = (prof: UserProfile) => {
     try {
@@ -556,7 +577,17 @@ export default function App() {
                   showToast('Access Denied: Only authorized administrators can access this portal.', 'error');
                 }
               } else if (_event === 'SIGNED_IN') {
-                resetUiStatesToHome();
+                // Do NOT reset UI if user was already logged in and just returned
+                // from the system file picker (Browse). That was closing Wallet.
+                if (skipHomeResetOnSignedInRef.current || filePickerOpenRef.current) {
+                  skipHomeResetOnSignedInRef.current = false;
+                  filePickerOpenRef.current = false;
+                  // keep current screen / wallet open
+                } else if (session) {
+                  // already had a session → treat as soft re-auth, keep UI
+                } else {
+                  resetUiStatesToHome();
+                }
               }
             } else {
               await supabase.auth.signOut().catch(() => {});
