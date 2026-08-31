@@ -126,21 +126,58 @@ export const LiveBroadcastPanel: React.FC<LiveBroadcastPanelProps> = ({ matches,
     return (matches || []).filter((m: any) => m && m.status !== 'cancelled');
   }, [matches]);
 
-  const tournamentGroups = useMemo(() => {
-    const grouped = new Map<string, { key: string; title: string; matches: Match[] }>();
-    selectableMatches.forEach((match: any, index) => {
-      const tournamentId = cleanName(match?.tournament_id || match?.tournamentId || match?.tournament?.id);
-      const tournamentTitle = cleanName(match?.tournament_title || match?.tournamentTitle || match?.tournament?.title);
-      const isTournament = match?.type === 'tournament' || Boolean(tournamentId) || Boolean(tournamentTitle) || (Array.isArray(match?.maps) && match.maps.length > 1);
-      if (!isTournament) return;
-      const key = tournamentId || tournamentTitle || `tournament-${match?.id || index}`;
-      const existing = grouped.get(key);
-      if (existing) existing.matches.push(match);
-      else grouped.set(key, { key, title: tournamentTitle || `Tournament ${grouped.size + 1}`, matches: [match] });
-    });
-    return Array.from(grouped.values());
+  const singleMatches = useMemo(() => {
+    return selectableMatches.filter((match: any) => cleanName(match?.type).toLowerCase() !== 'tournament');
   }, [selectableMatches]);
 
+  // Tournament records in MVP ESPORTS are stored as one Match row with maps[].
+  // Expand those maps into virtual Match 1/2/3... records for broadcasting
+  // without modifying the existing matches table.
+  type TournamentGroup = { key: string; title: string; source: Match[]; series: any[] };
+
+  const tournamentGroups = useMemo<TournamentGroup[]>(() => {
+    const grouped = new Map<string, { key: string; title: string; source: Match[] }>();
+
+    selectableMatches
+      .filter((match: any) => cleanName(match?.type).toLowerCase() === 'tournament')
+      .forEach((match: any, index: number) => {
+        const tournamentId = cleanName(match?.tournament_id || match?.tournamentId || match?.tournament?.id);
+        const tournamentTitle = cleanName(
+          match?.tournament_title ||
+          match?.tournamentTitle ||
+          match?.tournament?.title ||
+          match?.title
+        );
+        const key = tournamentId || tournamentTitle || `tournament-${match?.id || index}`;
+
+        const existing = grouped.get(key);
+        if (existing) existing.source.push(match);
+        else grouped.set(key, { key, title: tournamentTitle || `Tournament ${grouped.size + 1}`, source: [match] });
+      });
+
+    return Array.from(grouped.values()).map((group) => {
+      const series: any[] = [];
+
+      group.source.forEach((sourceMatch: any) => {
+        getMatchMaps(sourceMatch).forEach((mapName) => {
+          const matchNumber = series.length + 1;
+          series.push({
+            ...sourceMatch,
+            id: `${String(sourceMatch.id)}__map_${matchNumber}`,
+            source_match_id: String(sourceMatch.id),
+            map: mapName,
+            maps: [mapName],
+            tournament_match_number: matchNumber,
+            title: `Match ${matchNumber}`,
+          });
+        });
+      });
+
+      return { ...group, series };
+    });
+  }, [selectableMatches]);
+
+  const [broadcastType, setBroadcastType] = useState<'tournament' | 'single'>('tournament');
   const [selectedTournamentKey, setSelectedTournamentKey] = useState('');
   const [selectedMatchId, setSelectedMatchId] = useState('');
   const [selectedMapIndex, setSelectedMapIndex] = useState(0);
@@ -164,8 +201,12 @@ export const LiveBroadcastPanel: React.FC<LiveBroadcastPanelProps> = ({ matches,
   }, [tournamentGroups, selectedTournamentKey]);
 
   const currentMatch = useMemo(() => {
-    return selectableMatches.find((m: any) => m.id === selectedMatchId) || activeTournament?.matches[0] || null;
-  }, [selectableMatches, selectedMatchId, activeTournament]);
+    if (broadcastType === 'single') {
+      return singleMatches.find((m: any) => String(m.id) === String(selectedMatchId)) || singleMatches[0] || null;
+    }
+
+    return activeTournament?.series.find((m: any) => String(m.id) === String(selectedMatchId)) || activeTournament?.series[0] || null;
+  }, [broadcastType, singleMatches, selectedMatchId, activeTournament]);
 
   const squadSize = useMemo(() => {
     const type = getSquadTypeLabel(currentMatch);
@@ -212,17 +253,41 @@ export const LiveBroadcastPanel: React.FC<LiveBroadcastPanelProps> = ({ matches,
   }, [isAdmin, session?.id]);
 
   useEffect(() => {
-    const firstTournament = tournamentGroups[0];
-    if (!selectedTournamentKey && firstTournament) {
-      setSelectedTournamentKey(firstTournament.key);
-      setSelectedMatchId(firstTournament.matches[0]?.id || '');
-    }
-  }, [tournamentGroups, selectedTournamentKey]);
+    if (broadcastType === 'tournament') {
+      const firstTournament = tournamentGroups[0];
 
-  useEffect(() => {
-    const count = activeTournament?.matches.length || (currentMatch ? 1 : 0);
-    if (count > 0) setTotalMatches(Math.max(1, Math.min(20, count)));
-  }, [activeTournament, currentMatch]);
+      if (!firstTournament) {
+        setSelectedTournamentKey('');
+        setSelectedMatchId('');
+        setTotalMatches(1);
+        return;
+      }
+
+      const selectedGroup = tournamentGroups.find((group) => group.key === selectedTournamentKey) || firstTournament;
+
+      if (selectedGroup.key !== selectedTournamentKey) setSelectedTournamentKey(selectedGroup.key);
+
+      if (!selectedGroup.series.some((m: any) => String(m.id) === String(selectedMatchId))) {
+        setSelectedMatchId(String(selectedGroup.series[0]?.id || ''));
+      }
+
+      setTotalMatches(Math.max(1, Math.min(20, selectedGroup.series.length || 1)));
+    } else {
+      setSelectedTournamentKey('');
+
+      if (!singleMatches.length) {
+        setSelectedMatchId('');
+        setTotalMatches(1);
+        return;
+      }
+
+      if (!singleMatches.some((m: any) => String(m.id) === String(selectedMatchId))) {
+        setSelectedMatchId(String(singleMatches[0].id));
+      }
+
+      setTotalMatches(1);
+    }
+  }, [broadcastType, tournamentGroups, selectedTournamentKey, selectedMatchId, singleMatches]);
 
   useEffect(() => {
     if (currentMatch) setSelectedMapIndex(0);
@@ -259,10 +324,12 @@ export const LiveBroadcastPanel: React.FC<LiveBroadcastPanelProps> = ({ matches,
     }
 
     const rosterMatch: any = targetMatches[0];
+    const rosterSourceMatchId = String(rosterMatch?.source_match_id || rosterMatch?.id || '');
+
     const { data: bookingData, error: bookingError } = await supabase
       .from('slot_bookings')
       .select('*')
-      .eq('match_id', String(rosterMatch.id))
+      .eq('match_id', rosterSourceMatchId)
       .eq('status', 'confirmed')
       .order('slot_number', { ascending: true });
     if (bookingError) throw bookingError;
@@ -291,7 +358,7 @@ export const LiveBroadcastPanel: React.FC<LiveBroadcastPanelProps> = ({ matches,
 
     const teamInsertRows = Array.from(uniqueTeamMap.entries()).map(([teamKey, value]) => ({
       session_id: newSessionId,
-      broadcast_match_id: firstCreated?.id || null,
+      broadcast_match_id: null,
       team_key: teamKey,
       team_name: value.name,
       team_logo_url: value.logo || null,
@@ -306,10 +373,10 @@ export const LiveBroadcastPanel: React.FC<LiveBroadcastPanelProps> = ({ matches,
     const { data: createdTeams, error: teamInsertError } = await supabase.from('live_broadcast_teams').insert(teamInsertRows).select('*');
     if (teamInsertError) throw teamInsertError;
 
-    const createdTeamMap = new Map((createdTeams || []).map((row: any) => [row.team_key, row]));
+    const createdTeamMap = new Map<string, any>((createdTeams || []).map((row: any) => [String(row.team_key), row]));
     const playerInsertRows = playerRows.map((row) => ({
       session_id: newSessionId,
-      broadcast_match_id: firstCreated?.id || null,
+      broadcast_match_id: null,
       team_id: createdTeamMap.get(row.team_key)?.id || null,
       profile_id: row.profile_id,
       player_uid: row.player_uid,
@@ -330,20 +397,30 @@ export const LiveBroadcastPanel: React.FC<LiveBroadcastPanelProps> = ({ matches,
       show('error', 'Admin access and Supabase connection are required.');
       return;
     }
-    const targetMatches = activeTournament?.matches?.length ? activeTournament.matches : currentMatch ? [currentMatch] : [];
+    const targetMatches = broadcastType === 'tournament'
+      ? (activeTournament?.series || [])
+      : (currentMatch ? [currentMatch] : []);
+
     if (!targetMatches.length) {
-      show('error', 'Select a tournament or match first.');
+      show('error', broadcastType === 'tournament' ? 'No tournament matches are available.' : 'No single matches are available.');
       return;
     }
 
     setLoading(true);
     try {
-      const requestedCount = Math.max(1, Math.min(totalMatches, targetMatches.length));
+      const requestedCount = broadcastType === 'tournament'
+        ? Math.max(1, Math.min(totalMatches, targetMatches.length))
+        : 1;
+
       const selectedMatches = targetMatches.slice(0, requestedCount);
       const firstMatch: any = selectedMatches[0];
       const { data, error } = await supabase.from('live_broadcast_sessions').insert({
-        tournament_id: (firstMatch as any)?.tournament_id || (firstMatch as any)?.tournamentId || null,
-        tournament_title: activeTournament?.title || cleanName((firstMatch as any)?.tournament_title) || firstMatch?.title || 'MVP ESPORTS Broadcast',
+        tournament_id: broadcastType === 'tournament'
+          ? ((firstMatch as any)?.tournament_id || (firstMatch as any)?.tournamentId || null)
+          : null,
+        tournament_title: broadcastType === 'tournament'
+          ? (activeTournament?.title || cleanName((firstMatch as any)?.tournament_title) || firstMatch?.title || 'MVP ESPORTS Tournament')
+          : null,
         total_matches: requestedCount,
         current_match_number: 1,
         current_match_id: String(firstMatch.id),
@@ -525,7 +602,10 @@ export const LiveBroadcastPanel: React.FC<LiveBroadcastPanelProps> = ({ matches,
       show('info', 'There is no next match configured in this broadcast session.');
       return;
     }
-    const nextSource: any = selectableMatches.find((m: any) => String(m.id) === String(nextMatch.match_id));
+    const nextSource: any = selectableMatches.find((m: any) =>
+      String(m.id) === String(nextMatch.match_id) ||
+      String(m.id) === String(nextMatch.match_id).split('__map_')[0]
+    );
     setLiveAction(true);
     try {
       if (currentBroadcastMatch) {
@@ -611,17 +691,70 @@ export const LiveBroadcastPanel: React.FC<LiveBroadcastPanelProps> = ({ matches,
         <div className="xl:col-span-2 rounded-2xl border border-gray-800 bg-[#030a16] p-4 space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
-              <label className="mb-1 block text-[10px] font-black uppercase tracking-wider text-gray-400">Tournament</label>
-              <select value={selectedTournamentKey} onChange={(e) => { setSelectedTournamentKey(e.target.value); const group = tournamentGroups.find((g) => g.key === e.target.value); setSelectedMatchId(group?.matches[0]?.id || ''); }} className="w-full rounded-xl border border-gray-700 bg-[#07192e] px-3 py-2.5 text-xs font-bold text-white outline-none focus:border-cyan-400">
-                <option value="">Select tournament</option>
-                {tournamentGroups.map((group) => <option key={group.key} value={group.key}>{group.title} • {group.matches.length} match{group.matches.length === 1 ? '' : 'es'}</option>)}
+              <label className="mb-1 block text-[10px] font-black uppercase tracking-wider text-gray-400">BROADCAST TYPE</label>
+              <select value={broadcastType} onChange={(e) => {
+                const nextType = e.target.value as 'tournament' | 'single';
+                setBroadcastType(nextType);
+                setSession(null);
+                setBroadcastMatches([]);
+                setTeams([]);
+                setPlayers([]);
+                setSelectedMapIndex(0);
+                if (nextType === 'tournament') {
+                  const first = tournamentGroups[0];
+                  setSelectedTournamentKey(first?.key || '');
+                  setSelectedMatchId(String(first?.series[0]?.id || ''));
+                  setTotalMatches(first?.series.length || 1);
+                } else {
+                  setSelectedTournamentKey('');
+                  setSelectedMatchId(String(singleMatches[0]?.id || ''));
+                  setTotalMatches(1);
+                }
+              }} className="w-full rounded-xl border border-fuchsia-400/30 bg-[#100b20] px-3 py-2.5 text-xs font-black uppercase text-white outline-none focus:border-fuchsia-400">
+                <option value="tournament">TOURNAMENT</option>
+                <option value="single">SINGLE MATCH</option>
               </select>
             </div>
-            <div>
-              <label className="mb-1 block text-[10px] font-black uppercase tracking-wider text-gray-400">Starting Match</label>
-              <select value={selectedMatchId} onChange={(e) => setSelectedMatchId(e.target.value)} className="w-full rounded-xl border border-gray-700 bg-[#07192e] px-3 py-2.5 text-xs font-bold text-white outline-none focus:border-cyan-400">
+
+            {broadcastType === 'tournament' ? (
+              <div>
+                <label className="mb-1 block text-[10px] font-black uppercase tracking-wider text-gray-400">TOURNAMENT</label>
+                <select value={selectedTournamentKey} onChange={(e) => {
+                  const group = tournamentGroups.find((g) => g.key === e.target.value);
+                  setSelectedTournamentKey(e.target.value);
+                  setSelectedMatchId(String(group?.series[0]?.id || ''));
+                  setTotalMatches(group?.series.length || 1);
+                  setSelectedMapIndex(0);
+                }} className="w-full rounded-xl border border-gray-700 bg-[#07192e] px-3 py-2.5 text-xs font-bold text-white outline-none focus:border-cyan-400">
+                  <option value="">Select tournament</option>
+                  {tournamentGroups.map((group) => (
+                    <option key={group.key} value={group.key}>{group.title} • {group.series.length} match{group.series.length === 1 ? '' : 'es'}</option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <div>
+                <label className="mb-1 block text-[10px] font-black uppercase tracking-wider text-gray-400">SINGLE MATCH</label>
+                <select value={selectedMatchId} onChange={(e) => { setSelectedMatchId(e.target.value); setSelectedMapIndex(0); }} className="w-full rounded-xl border border-gray-700 bg-[#07192e] px-3 py-2.5 text-xs font-bold text-white outline-none focus:border-cyan-400">
+                  <option value="">Select match</option>
+                  {singleMatches.map((match: any) => (
+                    <option key={match.id} value={match.id}>{match.title || `Match ${match.id}`} • {getMatchMaps(match)[0] || 'Erangel'} • {getMatchTypeLabel(match)}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <div className="md:col-span-2">
+              <label className="mb-1 block text-[10px] font-black uppercase tracking-wider text-gray-400">
+                {broadcastType === 'tournament' ? 'STARTING TOURNAMENT MATCH' : 'SELECTED MATCH'}
+              </label>
+              <select value={selectedMatchId} onChange={(e) => { setSelectedMatchId(e.target.value); setSelectedMapIndex(0); }} className="w-full rounded-xl border border-gray-700 bg-[#07192e] px-3 py-2.5 text-xs font-bold text-white outline-none focus:border-cyan-400">
                 <option value="">Select match</option>
-                {(activeTournament?.matches || selectableMatches).map((match: any) => <option key={match.id} value={match.id}>{match.title || `Match ${match.id}`} • {getMatchMaps(match)[0] || 'Erangel'} • {getMatchTypeLabel(match)}</option>)}
+                {(broadcastType === 'tournament' ? (activeTournament?.series || []) : singleMatches).map((match: any, index: number) => (
+                  <option key={match.id} value={match.id}>
+                    {broadcastType === 'tournament' ? `MATCH ${index + 1}` : (match.title || `Match ${match.id}`)} • {getMatchMaps(match)[0] || 'Erangel'} • {getMatchTypeLabel(match)}
+                  </option>
+                ))}
               </select>
             </div>
           </div>
