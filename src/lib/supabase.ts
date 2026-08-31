@@ -4332,3 +4332,273 @@ export async function fetchMatchesAndBookingsFromSupabase(): Promise<{ matches: 
     bookings: _bookingsCache
   };
 }
+
+// -----------------------------------------------------------------------------
+// LIVE BROADCAST HELPERS
+// -----------------------------------------------------------------------------
+// These helpers use the real Supabase broadcast tables/RPCs only. They do not
+// write Team Number or Player Number columns because those values are derived
+// safely from the existing slot_number + squad type roster structure.
+
+export type LiveBroadcastPlayerIdentity = {
+  slot_number: number;
+  team_number: number;
+  player_number: number;
+  team_name: string;
+  player_name: string;
+  player_uid: string | null;
+  player_id: string | null;
+  user_id: string | null;
+  team_key: string;
+};
+
+/**
+ * Resolve the human-facing Team Number + Player Number from an existing
+ * slot_booking. This is the single mapping rule used by broadcast code.
+ *
+ * SQUAD = 4 players/team, DUO = 2 players/team, SOLO = 1 player/team.
+ * No database schema change is required for these derived values.
+ */
+export function resolveLiveBroadcastPlayerIdentity(
+  booking: any,
+  squadType: string | null | undefined,
+  fallbackIndex = 0
+): LiveBroadcastPlayerIdentity {
+  const normalizedSquad = String(squadType || 'SQUAD').trim().toUpperCase();
+  const squadSize = normalizedSquad === 'SOLO' ? 1 : normalizedSquad === 'DUO' ? 2 : 4;
+  const parsedSlot = Number(booking?.slot_number);
+  const slotNumber = Number.isInteger(parsedSlot) && parsedSlot > 0
+    ? parsedSlot
+    : Math.max(1, fallbackIndex + 1);
+
+  const teamNumber = Math.floor((slotNumber - 1) / squadSize) + 1;
+  const playerNumber = ((slotNumber - 1) % squadSize) + 1;
+  const teamName = String(booking?.team_name || '').trim() || `TEAM #${teamNumber}`;
+  const playerName = String(
+    booking?.player_ign || booking?.player_name || `Player ${playerNumber}`
+  ).trim();
+
+  return {
+    slot_number: slotNumber,
+    team_number: teamNumber,
+    player_number: playerNumber,
+    team_name: teamName,
+    player_name: playerName,
+    player_uid: booking?.player_uid ? String(booking.player_uid) : null,
+    player_id: booking?.player_id ? String(booking.player_id) : null,
+    user_id: booking?.user_id ? String(booking.user_id) : null,
+    team_key: teamName || `TEAM #${teamNumber}`,
+  };
+}
+
+/** Load the confirmed roster for one match and attach derived Team/Player numbers. */
+export async function getLiveBroadcastRoster(
+  matchId: string,
+  squadType: string | null | undefined
+): Promise<LiveBroadcastPlayerIdentity[]> {
+  if (!isSupabaseConfigured() || !supabase) {
+    throw new Error('Supabase is not connected. Live broadcast roster cannot be loaded.');
+  }
+  if (!matchId) {
+    throw new Error('A valid match ID is required to load the live broadcast roster.');
+  }
+
+  const { data, error } = await supabase
+    .from('slot_bookings')
+    .select('id, match_id, tournament_id, slot_number, team_name, player_ign, player_uid, player_id, user_id, status')
+    .eq('match_id', matchId)
+    .eq('status', 'confirmed')
+    .order('slot_number', { ascending: true });
+
+  if (error) {
+    throw new Error(`Failed to load live broadcast roster: ${error.message}`);
+  }
+
+  return (data || []).map((booking: any, index: number) =>
+    resolveLiveBroadcastPlayerIdentity(booking, squadType, index)
+  );
+}
+
+/** Call the Phase 3 scoring RPC without introducing a second scoring engine. */
+export async function callApplyLiveBroadcastEvent(params: {
+  sessionId: string;
+  broadcastMatchId?: string | null;
+  eventType?: string;
+  source?: string;
+  killerPlayerId?: string | null;
+  victimPlayerId?: string | null;
+  killerTeamId?: string | null;
+  victimTeamId?: string | null;
+  killDelta?: number;
+  pointDelta?: number;
+  placementPosition?: number | null;
+  detectionConfidence?: number | null;
+  externalEventId?: string | null;
+  eventPayload?: Record<string, any> | null;
+}): Promise<any> {
+  if (!isSupabaseConfigured() || !supabase) {
+    throw new Error('Supabase is not connected. Live broadcast event cannot be applied.');
+  }
+  if (!params.sessionId) {
+    throw new Error('Broadcast session ID is required.');
+  }
+
+  const { data, error } = await supabase.rpc('apply_live_broadcast_event', {
+    p_session_id: params.sessionId,
+    p_broadcast_match_id: params.broadcastMatchId ?? null,
+    p_event_type: params.eventType ?? 'kill',
+    p_source: params.source ?? 'admin',
+    p_killer_player_id: params.killerPlayerId ?? null,
+    p_victim_player_id: params.victimPlayerId ?? null,
+    p_killer_team_id: params.killerTeamId ?? null,
+    p_victim_team_id: params.victimTeamId ?? null,
+    p_kill_delta: Number.isFinite(Number(params.killDelta)) ? Number(params.killDelta) : 0,
+    p_point_delta: Number.isFinite(Number(params.pointDelta)) ? Number(params.pointDelta) : 0,
+    p_placement_position: params.placementPosition ?? null,
+    p_detection_confidence: params.detectionConfidence ?? null,
+    p_external_event_id: params.externalEventId ?? null,
+    p_event_payload: params.eventPayload ?? null,
+  });
+
+  if (error) {
+    throw new Error(`Live broadcast event failed: ${error.message}`);
+  }
+
+  return data;
+}
+
+/** Reverse one previously recorded live event. */
+export async function callReverseLiveBroadcastEvent(
+  sessionId: string,
+  eventId: string
+): Promise<any> {
+  if (!isSupabaseConfigured() || !supabase) {
+    throw new Error('Supabase is not connected. Live broadcast event cannot be reversed.');
+  }
+  if (!sessionId || !eventId) {
+    throw new Error('Broadcast session ID and event ID are required for undo.');
+  }
+
+  const { data, error } = await supabase.rpc('reverse_live_broadcast_event', {
+    p_session_id: sessionId,
+    p_event_id: eventId,
+  });
+
+  if (error) {
+    throw new Error(`Live broadcast event reversal failed: ${error.message}`);
+  }
+
+  return data;
+}
+
+/** Advance the locked broadcast session to the next configured match. */
+export async function callAdvanceLiveBroadcastMatch(sessionId: string): Promise<any> {
+  if (!isSupabaseConfigured() || !supabase) {
+    throw new Error('Supabase is not connected. Broadcast match cannot be advanced.');
+  }
+  if (!sessionId) {
+    throw new Error('Broadcast session ID is required to advance the match.');
+  }
+
+  const { data, error } = await supabase.rpc('advance_live_broadcast_match', {
+    p_session_id: sessionId,
+  });
+
+  if (error) {
+    throw new Error(`Live broadcast match advance failed: ${error.message}`);
+  }
+
+  return data;
+}
+
+/** Save the final snapshot of the currently active broadcast match. */
+export async function callSnapshotLiveBroadcastMatch(sessionId: string): Promise<any> {
+  if (!isSupabaseConfigured() || !supabase) {
+    throw new Error('Supabase is not connected. Broadcast snapshot cannot be saved.');
+  }
+  if (!sessionId) {
+    throw new Error('Broadcast session ID is required to save a snapshot.');
+  }
+
+  const { data, error } = await supabase.rpc('snapshot_live_broadcast_match', {
+    p_session_id: sessionId,
+  });
+
+  if (error) {
+    throw new Error(`Live broadcast snapshot failed: ${error.message}`);
+  }
+
+  return data;
+}
+
+/**
+ * Subscribe to the real broadcast tables. This is deliberately scoped to one
+ * session so the admin/overlay does not receive unrelated application traffic.
+ */
+export function subscribeToLiveBroadcastSession(
+  sessionId: string,
+  onChange: (payload: any) => void
+) {
+  if (!supabase || !isSupabaseConfigured() || !sessionId) return null;
+
+  const channel = supabase
+    .channel(`live-broadcast-session-${sessionId}`)
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'live_broadcast_sessions',
+        filter: `id=eq.${sessionId}`,
+      },
+      onChange
+    )
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'live_broadcast_matches',
+        filter: `session_id=eq.${sessionId}`,
+      },
+      onChange
+    )
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'live_broadcast_teams',
+        filter: `session_id=eq.${sessionId}`,
+      },
+      onChange
+    )
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'live_broadcast_players',
+        filter: `session_id=eq.${sessionId}`,
+      },
+      onChange
+    )
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'live_broadcast_events',
+        filter: `session_id=eq.${sessionId}`,
+      },
+      onChange
+    )
+    .subscribe();
+
+  return channel;
+}
+
+export async function unsubscribeFromLiveBroadcastSession(channel: any): Promise<void> {
+  if (!supabase || !channel) return;
+  await supabase.removeChannel(channel);
+}
