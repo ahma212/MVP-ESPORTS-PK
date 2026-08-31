@@ -57,8 +57,14 @@ type BroadcastPlayerRow = {
   profile_id?: string | null;
   player_uid?: string | null;
   player_name: string;
+  // Derived identity fields. These are calculated from the original slot_booking
+  // roster and are intentionally NOT written to live_broadcast_players columns.
+  team_number?: number | null;
+  player_number?: number | null;
+  slot_number?: number | null;
   current_match_kills: number;
   is_alive: boolean;
+  is_knocked?: boolean;
   tournament_kills: number;
 };
 
@@ -114,6 +120,24 @@ const teamKeyFromBooking = (booking: any, fallbackIndex: number, squadSize: numb
   const slot = Number(booking?.slot_number || fallbackIndex + 1);
   return `TEAM #${Math.ceil(slot / Math.max(1, squadSize))}`;
 };
+
+const getTeamAndPlayerNumber = (booking: any, fallbackIndex: number, squadSize: number) => {
+  const slotNumber = Math.max(1, Number(booking?.slot_number || fallbackIndex + 1));
+  const size = Math.max(1, Number(squadSize || 1));
+  return {
+    slotNumber,
+    teamNumber: Math.ceil(slotNumber / size),
+    playerNumber: ((slotNumber - 1) % size) + 1,
+  };
+};
+
+const sourceMatchIdFromBroadcastMatchId = (value: unknown) => {
+  const raw = cleanName(value);
+  const marker = raw.indexOf('__map_');
+  return marker > 0 ? raw.slice(0, marker) : raw;
+};
+
+const sameText = (a: unknown, b: unknown) => cleanName(a).trim().toLowerCase() === cleanName(b).trim().toLowerCase();
 
 const logoCandidates = (team: any) => {
   const value = team?.team_logo_url || team?.logo_url || team?.team_logo || team?.logo;
@@ -239,9 +263,60 @@ export const LiveBroadcastPanel: React.FC<LiveBroadcastPanelProps> = ({ matches,
         bottom: Boolean(sessionData.bottom_bar_enabled),
       });
     }
-    setBroadcastMatches((matchData || []) as BroadcastMatchRow[]);
+    const typedMatches = (matchData || []) as BroadcastMatchRow[];
+    const typedPlayers = (playerData || []) as BroadcastPlayerRow[];
+
+    // Rebuild Team Number + Player Number from the original slot_bookings roster.
+    // We deliberately do this without adding columns to live_broadcast_players so
+    // the existing Phase 3 database schema remains untouched.
+    let enrichedPlayers = typedPlayers;
+    const rosterSourceMatchId = sourceMatchIdFromBroadcastMatchId(typedMatches[0]?.match_id || sessionData?.current_match_id);
+    if (rosterSourceMatchId && supabase) {
+      const { data: rosterBookings, error: rosterError } = await supabase
+        .from('slot_bookings')
+        .select('player_id,user_id,player_uid,player_ign,player_name,team_name,slot_number')
+        .eq('match_id', rosterSourceMatchId)
+        .eq('status', 'confirmed')
+        .order('slot_number', { ascending: true });
+
+      if (!rosterError && rosterBookings) {
+        const rosterMap = rosterBookings.map((booking: any, index: number) => ({
+          booking,
+          identity: getTeamAndPlayerNumber(
+            booking,
+            index,
+            (() => {
+              const type = getSquadTypeLabel(sessionData);
+              if (type === 'DUO') return 2;
+              if (type === 'SOLO') return 1;
+              return 4;
+            })()
+          ),
+        }));
+
+        enrichedPlayers = typedPlayers.map((player) => {
+          const match = rosterMap.find(({ booking }) =>
+            (player.profile_id && sameText(player.profile_id, booking.player_id)) ||
+            (player.profile_id && sameText(player.profile_id, booking.user_id)) ||
+            (player.player_uid && sameText(player.player_uid, booking.player_uid)) ||
+            (player.player_name && sameText(player.player_name, booking.player_ign))
+          );
+
+          if (!match) return player;
+
+          return {
+            ...player,
+            team_number: match.identity.teamNumber,
+            player_number: match.identity.playerNumber,
+            slot_number: match.identity.slotNumber,
+          };
+        });
+      }
+    }
+
+    setBroadcastMatches(typedMatches);
     setTeams((teamData || []) as BroadcastTeamRow[]);
-    setPlayers((playerData || []) as BroadcastPlayerRow[]);
+    setPlayers(enrichedPlayers);
     setRecentEvents(eventData || []);
   };
 
@@ -344,6 +419,7 @@ export const LiveBroadcastPanel: React.FC<LiveBroadcastPanelProps> = ({ matches,
 
     (bookingData || []).forEach((booking: any, bookingIndex: number) => {
       const teamName = teamKeyFromBooking(booking, bookingIndex, squadSize);
+      const identity = getTeamAndPlayerNumber(booking, bookingIndex, squadSize);
       if (!uniqueTeamMap.has(teamName)) {
         uniqueTeamMap.set(teamName, { name: teamName, logo: logoCandidates(booking) });
       }
@@ -351,6 +427,9 @@ export const LiveBroadcastPanel: React.FC<LiveBroadcastPanelProps> = ({ matches,
         session_id: newSessionId,
         match_id: String(rosterMatch.id),
         team_key: teamName,
+        team_number: identity.teamNumber,
+        player_number: identity.playerNumber,
+        slot_number: identity.slotNumber,
         player_uid: cleanName(booking.player_uid) || null,
         player_name: cleanName(booking.player_ign) || cleanName(booking.player_name) || `Player ${bookingIndex + 1}`,
         profile_id: booking.player_id || booking.user_id || null,
@@ -382,6 +461,9 @@ export const LiveBroadcastPanel: React.FC<LiveBroadcastPanelProps> = ({ matches,
     if (teamInsertError) throw teamInsertError;
 
     const createdTeamMap = new Map<string, any>((createdTeams || []).map((row: any) => [String(row.team_key), row]));
+    // Do not send team_number/player_number to Supabase here: the existing
+    // live_broadcast_players table does not contain those columns. The identity
+    // is reconstructed from slot_bookings whenever this session is loaded.
     const playerInsertRows = playerRows.map((row) => ({
       session_id: newSessionId,
       broadcast_match_id: null,
