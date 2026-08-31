@@ -1,9 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Activity, AlertCircle, CheckCircle2, ChevronDown, CircleStop, Eye, EyeOff, Flame, Pause, Play, RotateCcw, Save, Settings2, ShieldCheck, SkipForward, Sparkles, Trophy, Users, X } from 'lucide-react';
-import { Match, SlotBooking, UserProfile } from '../types';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { Match, UserProfile } from '../types';
 
-type LiveSession = {
+type BroadcastSessionRow = {
   id: string;
   tournament_id?: string | null;
   tournament_title?: string | null;
@@ -13,19 +12,30 @@ type LiveSession = {
   current_map?: string | null;
   current_match_type?: string | null;
   current_squad_type?: string | null;
-  status: 'draft' | 'ready' | 'live' | 'paused' | 'completed' | 'cancelled';
+  status: string;
   overlay_enabled: boolean;
   top_three_enabled: boolean;
   bottom_bar_enabled: boolean;
   scoreboard_enabled: boolean;
-  active_banner_type?: string | null;
-  active_banner_team_id?: string | null;
-  active_banner_kills?: number | null;
   stream_url?: string | null;
 };
 
-type TeamStat = {
+type BroadcastMatchRow = {
   id: string;
+  session_id: string;
+  match_id: string;
+  match_number: number;
+  map?: string | null;
+  match_type?: string | null;
+  squad_type?: string | null;
+  status: string;
+  scoring_snapshot?: Record<string, any>;
+};
+
+type BroadcastTeamRow = {
+  id: string;
+  session_id: string;
+  broadcast_match_id?: string | null;
   team_key: string;
   team_name: string;
   team_logo_url?: string | null;
@@ -35,458 +45,400 @@ type TeamStat = {
   tournament_total_kills: number;
   tournament_total_points: number;
   rank?: number | null;
+  is_eliminated: boolean;
 };
 
-type PlayerStat = {
+type BroadcastPlayerRow = {
   id: string;
+  session_id: string;
+  broadcast_match_id?: string | null;
   team_id?: string | null;
   profile_id?: string | null;
   player_uid?: string | null;
   player_name: string;
   current_match_kills: number;
-  tournament_kills: number;
   is_alive: boolean;
+  tournament_kills: number;
 };
 
-interface Props {
-  isOpen: boolean;
-  onClose: () => void;
+type LiveBroadcastPanelProps = {
   matches: Match[];
   userProfile?: UserProfile | null;
-}
+};
 
-const TEAM_PLACEHOLDER = 'UNASSIGNED';
+type ScoreRuleDraft = {
+  key: string;
+  label: string;
+  type: 'kill' | 'placement';
+  placement_position: number | null;
+  points: number;
+  enabled: boolean;
+};
 
-function normaliseTeamName(value?: string | null) {
-  const name = String(value || '').trim();
-  return name || TEAM_PLACEHOLDER;
-}
+const DEFAULT_PLACEMENT_RULES: ScoreRuleDraft[] = [1, 2, 3, 4, 5].map((position) => ({
+  key: `placement-${position}`,
+  label: `Top ${position}`,
+  type: 'placement',
+  placement_position: position,
+  points: position === 1 ? 10 : position === 2 ? 6 : position === 3 ? 5 : position === 4 ? 4 : 3,
+  enabled: true,
+}));
 
-function displayMap(match?: Match | null) {
-  if (!match) return '—';
-  return match.map || match.maps?.[0] || '—';
-}
+const DEFAULT_RULES: ScoreRuleDraft[] = [
+  {
+    key: 'kill',
+    label: 'Kill',
+    type: 'kill',
+    placement_position: null,
+    points: 1,
+    enabled: true,
+  },
+  ...DEFAULT_PLACEMENT_RULES,
+];
 
-function isAdmin(profile?: UserProfile | null) {
-  return Boolean(profile?.is_admin === true || profile?.role === 'admin');
-}
+const cleanName = (value: unknown) => String(value ?? '').trim();
 
-export const LiveBroadcastPanel: React.FC<Props> = ({ isOpen, onClose, matches, userProfile }) => {
-  const adminAllowed = isAdmin(userProfile);
-  const [selectedMatchIds, setSelectedMatchIds] = useState<string[]>([]);
-  const [totalMatches, setTotalMatches] = useState(1);
-  const [killPoints, setKillPoints] = useState(1);
-  const [savingScoreRules, setSavingScoreRules] = useState(false);
-  const [placementPoints, setPlacementPoints] = useState<Record<number, number>>({ 1: 10, 2: 6, 3: 5, 4: 4, 5: 3 });
-  const [streamUrl, setStreamUrl] = useState('');
-  const [session, setSession] = useState<LiveSession | null>(null);
-  const [teams, setTeams] = useState<TeamStat[]>([]);
-  const [players, setPlayers] = useState<PlayerStat[]>([]);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
-  const [manualKillerId, setManualKillerId] = useState('');
-  const [manualVictimId, setManualVictimId] = useState('');
-  const [showAllPlayers, setShowAllPlayers] = useState(false);
+const getMatchMaps = (match: any): string[] => {
+  if (Array.isArray(match?.maps) && match.maps.length) return match.maps.map((m: any) => cleanName(m)).filter(Boolean);
+  if (match?.map) return [cleanName(match.map)];
+  return ['Erangel'];
+};
 
-  const activeMatches = useMemo(() => {
-    return (matches || []).filter(m => m.status !== 'completed' && !m.is_ended);
+const getMatchTypeLabel = (match: any) => cleanName(match?.type || match?.match_type || 'match').toUpperCase();
+const getSquadTypeLabel = (match: any) => cleanName(match?.squad_type || '').toUpperCase();
+
+const teamKeyFromBooking = (booking: any, fallbackIndex: number, squadSize: number) => {
+  const explicit = cleanName(booking?.team_name);
+  if (explicit) return explicit;
+  const slot = Number(booking?.slot_number || fallbackIndex + 1);
+  return `TEAM #${Math.ceil(slot / Math.max(1, squadSize))}`;
+};
+
+const logoCandidates = (team: any) => {
+  const value = team?.team_logo_url || team?.logo_url || team?.team_logo || team?.logo;
+  return cleanName(value);
+};
+
+export const LiveBroadcastPanel: React.FC<LiveBroadcastPanelProps> = ({ matches, userProfile }) => {
+  const isAdmin = Boolean((userProfile as any)?.is_admin === true || (userProfile as any)?.role === 'admin');
+
+  const selectableMatches = useMemo(() => {
+    return (matches || []).filter((m: any) => m && m.status !== 'cancelled');
   }, [matches]);
 
-  const currentMatch = useMemo(() => {
-    if (!session?.current_match_id) return null;
-    return matches.find(m => m.id === session.current_match_id) || null;
-  }, [matches, session?.current_match_id]);
-
-  const selectableTournamentGroups = useMemo(() => {
-    const groups = new Map<string, Match[]>();
-    activeMatches.forEach(match => {
-      const key = String(match.title || 'Untitled Tournament').trim();
-      const arr = groups.get(key) || [];
-      arr.push(match);
-      groups.set(key, arr);
+  const tournamentGroups = useMemo(() => {
+    const grouped = new Map<string, { key: string; title: string; matches: Match[] }>();
+    selectableMatches.forEach((match: any, index) => {
+      const tournamentId = cleanName(match?.tournament_id || match?.tournamentId || match?.tournament?.id);
+      const tournamentTitle = cleanName(match?.tournament_title || match?.tournamentTitle || match?.tournament?.title);
+      const isTournament = match?.type === 'tournament' || Boolean(tournamentId) || Boolean(tournamentTitle) || (Array.isArray(match?.maps) && match.maps.length > 1);
+      if (!isTournament) return;
+      const key = tournamentId || tournamentTitle || `tournament-${match?.id || index}`;
+      const existing = grouped.get(key);
+      if (existing) existing.matches.push(match);
+      else grouped.set(key, { key, title: tournamentTitle || `Tournament ${grouped.size + 1}`, matches: [match] });
     });
-    return Array.from(groups.entries()).map(([title, items]) => ({
-      title,
-      items: items.sort((a, b) => a.timestamp - b.timestamp),
-    }));
-  }, [activeMatches]);
+    return Array.from(grouped.values());
+  }, [selectableMatches]);
+
+  const [selectedTournamentKey, setSelectedTournamentKey] = useState('');
+  const [selectedMatchId, setSelectedMatchId] = useState('');
+  const [selectedMapIndex, setSelectedMapIndex] = useState(0);
+  const [totalMatches, setTotalMatches] = useState(1);
+  const [streamUrl, setStreamUrl] = useState('');
+  const [rules, setRules] = useState<ScoreRuleDraft[]>(DEFAULT_RULES);
+  const [session, setSession] = useState<BroadcastSessionRow | null>(null);
+  const [broadcastMatches, setBroadcastMatches] = useState<BroadcastMatchRow[]>([]);
+  const [teams, setTeams] = useState<BroadcastTeamRow[]>([]);
+  const [players, setPlayers] = useState<BroadcastPlayerRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
+  const [liveAction, setLiveAction] = useState(false);
+  const [testKillerId, setTestKillerId] = useState('');
+  const [testVictimId, setTestVictimId] = useState('');
+  const [pointsAdjustment, setPointsAdjustment] = useState('0');
+  const [visible, setVisible] = useState({ scoreboard: false, top3: false, bottom: true });
+
+  const activeTournament = useMemo(() => {
+    return tournamentGroups.find((group) => group.key === selectedTournamentKey) || null;
+  }, [tournamentGroups, selectedTournamentKey]);
+
+  const currentMatch = useMemo(() => {
+    return selectableMatches.find((m: any) => m.id === selectedMatchId) || activeTournament?.matches[0] || null;
+  }, [selectableMatches, selectedMatchId, activeTournament]);
+
+  const squadSize = useMemo(() => {
+    const type = getSquadTypeLabel(currentMatch);
+    if (type === 'DUO') return 2;
+    if (type === 'SOLO') return 1;
+    return 4;
+  }, [currentMatch]);
+
+  const loadSession = async (sessionId: string) => {
+    if (!supabase || !sessionId) return;
+    const [{ data: sessionData }, { data: matchData }, { data: teamData }, { data: playerData }] = await Promise.all([
+      supabase.from('live_broadcast_sessions').select('*').eq('id', sessionId).maybeSingle(),
+      supabase.from('live_broadcast_matches').select('*').eq('session_id', sessionId).order('match_number', { ascending: true }),
+      supabase.from('live_broadcast_teams').select('*').eq('session_id', sessionId).order('rank', { ascending: true, nullsFirst: false }),
+      supabase.from('live_broadcast_players').select('*').eq('session_id', sessionId).order('player_name', { ascending: true }),
+    ]);
+    if (sessionData) {
+      setSession(sessionData as BroadcastSessionRow);
+      setStreamUrl(sessionData.stream_url || '');
+      setVisible({
+        scoreboard: Boolean(sessionData.scoreboard_enabled),
+        top3: Boolean(sessionData.top_three_enabled),
+        bottom: Boolean(sessionData.bottom_bar_enabled),
+      });
+    }
+    setBroadcastMatches((matchData || []) as BroadcastMatchRow[]);
+    setTeams((teamData || []) as BroadcastTeamRow[]);
+    setPlayers((playerData || []) as BroadcastPlayerRow[]);
+  };
 
   useEffect(() => {
-    if (!isOpen) return;
-    setError('');
-    setNotice('');
-  }, [isOpen]);
+    if (!isAdmin || !supabase || !session?.id) return;
+    const channel = supabase
+      .channel(`mvp-live-broadcast-${session.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'live_broadcast_sessions', filter: `id=eq.${session.id}` }, () => loadSession(session.id))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'live_broadcast_matches', filter: `session_id=eq.${session.id}` }, () => loadSession(session.id))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'live_broadcast_teams', filter: `session_id=eq.${session.id}` }, () => loadSession(session.id))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'live_broadcast_players', filter: `session_id=eq.${session.id}` }, () => loadSession(session.id))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'live_broadcast_events', filter: `session_id=eq.${session.id}` }, () => loadSession(session.id))
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [isAdmin, session?.id]);
 
-  const currentMatchIndex = session ? Math.max(0, session.current_match_number - 1) : 0;
+  useEffect(() => {
+    const firstTournament = tournamentGroups[0];
+    if (!selectedTournamentKey && firstTournament) {
+      setSelectedTournamentKey(firstTournament.key);
+      setSelectedMatchId(firstTournament.matches[0]?.id || '');
+    }
+  }, [tournamentGroups, selectedTournamentKey]);
 
-  const currentSelectedSequence = useMemo(() => {
-    if (!selectedMatchIds.length) return [];
-    return selectedMatchIds
-      .map(id => matches.find(m => m.id === id))
-      .filter(Boolean) as Match[];
-  }, [matches, selectedMatchIds]);
+  useEffect(() => {
+    const count = activeTournament?.matches.length || (currentMatch ? 1 : 0);
+    if (count > 0) setTotalMatches(Math.max(1, Math.min(20, count)));
+  }, [activeTournament, currentMatch]);
 
-  const loadSessionState = async (sessionId: string) => {
-    if (!supabase) return;
-    const [{ data: sessionData, error: sessionError }, { data: teamData, error: teamError }, { data: playerData, error: playerError }] = await Promise.all([
-      supabase.from('live_broadcast_sessions').select('*').eq('id', sessionId).single(),
-      supabase.from('live_broadcast_teams').select('*').eq('session_id', sessionId).order('tournament_total_points', { ascending: false }),
-      supabase.from('live_broadcast_players').select('*').eq('session_id', sessionId).order('player_name')
-    ]);
+  useEffect(() => {
+    if (currentMatch) setSelectedMapIndex(0);
+  }, [selectedMatchId]);
 
-    if (sessionError) throw sessionError;
-    if (teamError) throw teamError;
-    if (playerError) throw playerError;
-
-    setSession(sessionData as LiveSession);
-    setTeams((teamData || []) as TeamStat[]);
-    setPlayers((playerData || []) as PlayerStat[]);
+  const show = (type: 'success' | 'error' | 'info', text: string) => {
+    setMessage({ type, text });
+    window.setTimeout(() => setMessage(null), 4500);
   };
 
-  const startSession = async () => {
-    if (!adminAllowed || !supabase) return;
-    if (!selectedMatchIds.length) {
-      setError('Pehle kam az kam ek match select karein.');
-      return;
+  const buildSessionTeamsAndPlayers = async (newSessionId: string, targetMatches: Match[]) => {
+    if (!supabase || !targetMatches.length) return;
+    const uniqueTeamMap = new Map<string, { name: string; logo: string }>();
+    const playerRows: Array<any> = [];
+    const matchRows: Array<any> = [];
+
+    // Create one live-match record for every selected tournament match.
+    // Player/team snapshots are intentionally loaded from the first match only
+    // so the same tournament roster carries forward across Match 1 -> Match 2 -> ...
+    for (let matchIndex = 0; matchIndex < targetMatches.length; matchIndex += 1) {
+      const match: any = targetMatches[matchIndex];
+      const maps = getMatchMaps(match);
+      matchRows.push({
+        session_id: newSessionId,
+        match_id: String(match.id),
+        match_number: matchIndex + 1,
+        map: maps[0] || cleanName(match?.map) || 'Erangel',
+        match_type: getMatchTypeLabel(match),
+        squad_type: getSquadTypeLabel(match),
+        status: matchIndex === 0 ? 'live' : 'pending',
+        started_at: matchIndex === 0 ? new Date().toISOString() : null,
+        scoring_snapshot: rules,
+      });
     }
-    setBusy(true);
-    setError('');
-    setNotice('');
-    try {
-      const sequence = currentSelectedSequence;
-      const first = sequence[0];
-      const now = new Date().toISOString();
 
-      const { data: sessionRow, error: sessionError } = await supabase
-        .from('live_broadcast_sessions')
-        .insert([{
-          tournament_title: first?.title || 'MVP ESPORTS LIVE',
-          total_matches: Math.min(Math.max(totalMatches, 1), sequence.length),
-          current_match_number: 1,
-          current_match_id: first.id,
-          current_map: displayMap(first),
-          current_match_type: first.type,
-          current_squad_type: first.squad_type,
-          status: 'ready',
-          overlay_enabled: false,
-          scoreboard_enabled: false,
-          top_three_enabled: false,
-          bottom_bar_enabled: true,
-          stream_url: streamUrl.trim() || null,
-          created_by: userProfile?.id || null,
-          created_at: now,
-          updated_at: now,
-        }])
-        .select('*')
-        .single();
-      if (sessionError) throw sessionError;
-      if (!sessionRow) throw new Error('Live session create nahi hui.');
-
-      const sessionId = sessionRow.id as string;
-      const chosenSequence = sequence.slice(0, Math.min(totalMatches, sequence.length));
-
-      const { error: matchInsertError } = await supabase.from('live_broadcast_matches').insert(
-        chosenSequence.map((m, idx) => ({
-          session_id: sessionId,
-          match_id: m.id,
-          match_number: idx + 1,
-          map: displayMap(m),
-          match_type: m.type,
-          squad_type: m.squad_type,
-          status: idx === 0 ? 'ready' : 'pending',
-          scoring_snapshot: {
-            kill_points: killPoints,
-            placement_points: placementPoints,
-          },
-          final_snapshot: {},
-          created_at: now,
-          updated_at: now,
-        }))
-      );
-      if (matchInsertError) throw matchInsertError;
-
-      const firstBookings = await loadBookings(first.id);
-      await seedParticipants(sessionId, sessionRow, first, firstBookings);
-      await saveScoringRules(sessionId);
-      await loadSessionState(sessionId);
-      setNotice('Live Broadcast session ready hai.');
-    } catch (e: any) {
-      setError(e?.message || 'Live session create nahi ho saki.');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const loadBookings = async (matchId: string): Promise<SlotBooking[]> => {
-    if (!supabase) return [];
-    const { data, error: bookingsError } = await supabase
+    const rosterMatch: any = targetMatches[0];
+    const { data: bookingData, error: bookingError } = await supabase
       .from('slot_bookings')
       .select('*')
-      .eq('match_id', matchId)
+      .eq('match_id', String(rosterMatch.id))
       .eq('status', 'confirmed')
       .order('slot_number', { ascending: true });
-    if (bookingsError) throw bookingsError;
-    return (data || []) as SlotBooking[];
-  };
+    if (bookingError) throw bookingError;
 
-  const seedParticipants = async (sessionId: string, sessionRow: any, match: Match, bookings: SlotBooking[]) => {
-    if (!supabase) return;
-    const squadSize = match.squad_type === 'SQUAD' ? 4 : match.squad_type === 'DUO' ? 2 : 1;
-    const validBookings = bookings.filter(b => b.player_ign && b.player_ign.trim());
-    const groups = new Map<string, SlotBooking[]>();
-
-    validBookings.forEach(b => {
-      const key = normaliseTeamName(b.team_name || `TEAM #${Math.ceil((b.slot_number || 1) / squadSize)}`);
-      const arr = groups.get(key) || [];
-      arr.push(b);
-      groups.set(key, arr);
+    (bookingData || []).forEach((booking: any, bookingIndex: number) => {
+      const teamName = teamKeyFromBooking(booking, bookingIndex, squadSize);
+      if (!uniqueTeamMap.has(teamName)) {
+        uniqueTeamMap.set(teamName, { name: teamName, logo: logoCandidates(booking) });
+      }
+      playerRows.push({
+        session_id: newSessionId,
+        match_id: String(rosterMatch.id),
+        team_key: teamName,
+        player_uid: cleanName(booking.player_uid) || null,
+        player_name: cleanName(booking.player_ign) || cleanName(booking.player_name) || `Player ${bookingIndex + 1}`,
+        profile_id: booking.player_id || booking.user_id || null,
+        current_match_kills: 0,
+        is_alive: true,
+        tournament_kills: 0,
+      });
     });
 
-    const teamRows = Array.from(groups.entries()).map(([teamName, members]) => ({
-      session_id: sessionId,
-      broadcast_match_id: null,
-      team_key: teamName,
-      team_name: teamName,
+    const { data: createdMatches, error: matchInsertError } = await supabase.from('live_broadcast_matches').insert(matchRows).select('*');
+    if (matchInsertError) throw matchInsertError;
+    const firstCreated = (createdMatches || [])[0] as BroadcastMatchRow | undefined;
+
+    const teamInsertRows = Array.from(uniqueTeamMap.entries()).map(([teamKey, value]) => ({
+      session_id: newSessionId,
+      broadcast_match_id: firstCreated?.id || null,
+      team_key: teamKey,
+      team_name: value.name,
+      team_logo_url: value.logo || null,
       current_match_kills: 0,
       current_match_points: 0,
-      current_alive_players: members.length,
+      current_alive_players: squadSize,
       tournament_total_kills: 0,
       tournament_total_points: 0,
       is_eliminated: false,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
     }));
 
-    if (teamRows.length) {
-      const { data: insertedTeams, error: teamError } = await supabase
-        .from('live_broadcast_teams')
-        .insert(teamRows)
-        .select('*');
-      if (teamError) throw teamError;
+    const { data: createdTeams, error: teamInsertError } = await supabase.from('live_broadcast_teams').insert(teamInsertRows).select('*');
+    if (teamInsertError) throw teamInsertError;
 
-      const teamMap = new Map<string, any>((insertedTeams || []).map((t: any) => [t.team_key, t]));
-      const playerRows = validBookings.map(b => {
-        const teamName = normaliseTeamName(b.team_name || `TEAM #${Math.ceil((b.slot_number || 1) / squadSize)}`);
-        return {
-          session_id: sessionId,
-          broadcast_match_id: null,
-          team_id: teamMap.get(teamName)?.id || null,
-          profile_id: b.player_id || b.user_id || null,
-          player_uid: b.player_uid || null,
-          player_name: b.player_ign,
-          current_match_kills: 0,
-          is_alive: true,
-          tournament_kills: 0,
-          tournament_match_count: 0,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        };
-      });
+    const createdTeamMap = new Map((createdTeams || []).map((row: any) => [row.team_key, row]));
+    const playerInsertRows = playerRows.map((row) => ({
+      session_id: newSessionId,
+      broadcast_match_id: firstCreated?.id || null,
+      team_id: createdTeamMap.get(row.team_key)?.id || null,
+      profile_id: row.profile_id,
+      player_uid: row.player_uid,
+      player_name: row.player_name,
+      current_match_kills: 0,
+      is_alive: true,
+      tournament_kills: 0,
+    }));
 
-      if (playerRows.length) {
-        const { error: playerError } = await supabase.from('live_broadcast_players').insert(playerRows);
-        if (playerError) throw playerError;
-      }
+    if (playerInsertRows.length) {
+      const { error: playerInsertError } = await supabase.from('live_broadcast_players').insert(playerInsertRows);
+      if (playerInsertError) throw playerInsertError;
     }
   };
 
-  const saveScoringRules = async (sessionId: string) => {
-    if (!supabase) return;
-    const rows = [
-      { session_id: sessionId, rule_type: 'kill', placement_position: null, points: killPoints, is_enabled: true },
-      ...Object.entries(placementPoints).map(([position, points]) => ({
-        session_id: sessionId,
-        rule_type: 'placement',
-        placement_position: Number(position),
-        points,
-        is_enabled: true,
-      })),
-    ];
-    const { error: ruleError } = await supabase.from('live_broadcast_scoring_rules').insert(rows);
-    if (ruleError) throw ruleError;
-  };
-
-  const updateSession = async (patch: Partial<LiveSession>) => {
-    if (!supabase || !session) return;
-    const { error: updateError } = await supabase.from('live_broadcast_sessions').update(patch).eq('id', session.id);
-    if (updateError) throw updateError;
-    await loadSessionState(session.id);
-  };
-
-  const refreshParticipantsForMatch = async (match: Match, nextMatchNumber: number) => {
-    if (!supabase || !session) return;
-    const bookings = await loadBookings(match.id);
-    const [{ data: existingTeams, error: existingTeamsError }, { data: existingPlayers, error: existingPlayersError }] = await Promise.all([
-      supabase.from('live_broadcast_teams').select('*').eq('session_id', session.id),
-      supabase.from('live_broadcast_players').select('*').eq('session_id', session.id),
-    ]);
-    if (existingTeamsError) throw existingTeamsError;
-    if (existingPlayersError) throw existingPlayersError;
-
-    // Reset only CURRENT-MATCH values. Tournament totals are intentionally preserved.
-    if (existingTeams?.length) {
-      const { error } = await supabase.from('live_broadcast_teams').update({
-        current_match_kills: 0,
-        current_match_points: 0,
-        current_alive_players: 0,
-        is_eliminated: false,
-      }).eq('session_id', session.id);
-      if (error) throw error;
-    }
-
-    if (existingPlayers?.length) {
-      const { error } = await supabase.from('live_broadcast_players').update({
-        current_match_kills: 0,
-        is_alive: false,
-      }).eq('session_id', session.id);
-      if (error) throw error;
-    }
-
-    const squadSize = match.squad_type === 'SQUAD' ? 4 : match.squad_type === 'DUO' ? 2 : 1;
-    const groups = new Map<string, SlotBooking[]>();
-    bookings.filter(b => b.player_ign && b.player_ign.trim()).forEach(b => {
-      const key = normaliseTeamName(b.team_name || `TEAM #${Math.ceil((b.slot_number || 1) / squadSize)}`);
-      const arr = groups.get(key) || [];
-      arr.push(b);
-      groups.set(key, arr);
-    });
-
-    const teamMap = new Map<string, TeamStat>();
-    (existingTeams || []).forEach(t => teamMap.set(t.team_key, t as TeamStat));
-
-    for (const [teamName, members] of groups.entries()) {
-      const existing = teamMap.get(teamName);
-      if (existing) {
-        const { error } = await supabase.from('live_broadcast_teams').update({
-          current_match_kills: 0,
-          current_match_points: 0,
-          current_alive_players: members.length,
-          is_eliminated: false,
-        }).eq('id', existing.id);
-        if (error) throw error;
-      } else {
-        const { data, error } = await supabase.from('live_broadcast_teams').insert([{
-          session_id: session.id,
-          broadcast_match_id: null,
-          team_key: teamName,
-          team_name: teamName,
-          current_match_kills: 0,
-          current_match_points: 0,
-          current_alive_players: members.length,
-          tournament_total_kills: 0,
-          tournament_total_points: 0,
-          is_eliminated: false,
-        }]).select('*').single();
-        if (error) throw error;
-        if (data) teamMap.set(teamName, data as TeamStat);
-      }
-    }
-
-    const existingByKey = new Map<string, PlayerStat>();
-    (existingPlayers || []).forEach((p: any) => {
-      const key = `${p.player_uid || ''}|${String(p.player_name || '').trim().toLowerCase()}`;
-      existingByKey.set(key, p as PlayerStat);
-    });
-
-    for (const b of bookings.filter(b => b.player_ign && b.player_ign.trim())) {
-      const teamName = normaliseTeamName(b.team_name || `TEAM #${Math.ceil((b.slot_number || 1) / squadSize)}`);
-      const team = teamMap.get(teamName);
-      const key = `${b.player_uid || ''}|${String(b.player_ign || '').trim().toLowerCase()}`;
-      const previous = existingByKey.get(key);
-      if (previous) {
-        const { error } = await supabase.from('live_broadcast_players').update({
-          team_id: team?.id || null,
-          current_match_kills: 0,
-          is_alive: true,
-          profile_id: b.player_id || b.user_id || previous.profile_id || null,
-          player_uid: b.player_uid || previous.player_uid || null,
-          player_name: b.player_ign,
-        }).eq('id', previous.id);
-        if (error) throw error;
-      } else {
-        const { error } = await supabase.from('live_broadcast_players').insert([{
-          session_id: session.id,
-          broadcast_match_id: null,
-          team_id: team?.id || null,
-          profile_id: b.player_id || b.user_id || null,
-          player_uid: b.player_uid || null,
-          player_name: b.player_ign,
-          current_match_kills: 0,
-          is_alive: true,
-          tournament_kills: 0,
-          tournament_match_count: 0,
-        }]);
-        if (error) throw error;
-      }
-    }
-
-    const { data: matchRow, error: matchRowError } = await supabase
-      .from('live_broadcast_matches')
-      .select('*')
-      .eq('session_id', session.id)
-      .eq('match_number', nextMatchNumber)
-      .single();
-    if (matchRowError) throw matchRowError;
-
-    await supabase.from('live_broadcast_matches').update({ status: 'live', started_at: new Date().toISOString() }).eq('id', matchRow.id);
-    await supabase.from('live_broadcast_sessions').update({
-      current_match_number: nextMatchNumber,
-      current_match_id: match.id,
-      current_map: displayMap(match),
-      current_match_type: match.type,
-      current_squad_type: match.squad_type,
-      status: 'live',
-    }).eq('id', session.id);
-    await loadSessionState(session.id);
-  };
-
-  const setLive = async () => {
-    if (!session) return;
-    setBusy(true);
-    setError('');
-    try {
-      await updateSession({ status: 'live', overlay_enabled: true, scoreboard_enabled: true });
-      setNotice('Broadcast LIVE ho gaya.');
-    } catch (e: any) {
-      setError(e?.message || 'Live start nahi ho saka.');
-    } finally { setBusy(false); }
-  };
-
-  const pauseLive = async () => {
-    if (!session) return;
-    setBusy(true);
-    setError('');
-    try { await updateSession({ status: 'paused' }); setNotice('Broadcast paused.'); }
-    catch (e: any) { setError(e?.message || 'Pause failed.'); }
-    finally { setBusy(false); }
-  };
-
-  const toggleOverlay = async () => {
-    if (!session) return;
-    setBusy(true);
-    setError('');
-    try { await updateSession({ overlay_enabled: !session.overlay_enabled }); }
-    catch (e: any) { setError(e?.message || 'Overlay setting change nahi hui.'); }
-    finally { setBusy(false); }
-  };
-
-  const addKill = async () => {
-    if (!supabase || !session || !manualKillerId) {
-      setError('Killer player select karein.');
+  const createSession = async () => {
+    if (!isAdmin || !supabase || !isSupabaseConfigured()) {
+      show('error', 'Admin access and Supabase connection are required.');
       return;
     }
-    setBusy(true);
-    setError('');
-    try {
-      const killer = players.find(p => p.id === manualKillerId);
-      const victim = manualVictimId ? players.find(p => p.id === manualVictimId) : null;
-      if (!killer) throw new Error('Killer player nahi mila.');
-      if (victim && victim.id === killer.id) throw new Error('Killer aur victim same player nahi ho sakte.');
+    const targetMatches = activeTournament?.matches?.length ? activeTournament.matches : currentMatch ? [currentMatch] : [];
+    if (!targetMatches.length) {
+      show('error', 'Select a tournament or match first.');
+      return;
+    }
 
-      const { data: event, error: eventError } = await supabase.from('live_broadcast_events').insert([{
-        session_id: session.id,
-        broadcast_match_id: session.current_match_id ? (await getBroadcastMatchId(session.id, session.current_match_number)) : null,
+    setLoading(true);
+    try {
+      const requestedCount = Math.max(1, Math.min(totalMatches, targetMatches.length));
+      const selectedMatches = targetMatches.slice(0, requestedCount);
+      const firstMatch: any = selectedMatches[0];
+      const { data, error } = await supabase.from('live_broadcast_sessions').insert({
+        tournament_id: (firstMatch as any)?.tournament_id || (firstMatch as any)?.tournamentId || null,
+        tournament_title: activeTournament?.title || cleanName((firstMatch as any)?.tournament_title) || firstMatch?.title || 'MVP ESPORTS Broadcast',
+        total_matches: requestedCount,
+        current_match_number: 1,
+        current_match_id: String(firstMatch.id),
+        current_map: getMatchMaps(firstMatch)[0],
+        current_match_type: getMatchTypeLabel(firstMatch),
+        current_squad_type: getSquadTypeLabel(firstMatch),
+        status: 'ready',
+        overlay_enabled: false,
+        scoreboard_enabled: false,
+        top_three_enabled: false,
+        bottom_bar_enabled: true,
+        stream_url: streamUrl.trim() || null,
+        created_by: (userProfile as any)?.id || null,
+      }).select('*').single();
+      if (error) throw error;
+
+      const ruleRows = rules.filter((rule) => rule.enabled).map((rule) => ({
+        session_id: data.id,
+        rule_type: rule.type,
+        placement_position: rule.placement_position,
+        points: rule.points,
+        is_enabled: true,
+      }));
+      if (ruleRows.length) {
+        const { error: ruleError } = await supabase.from('live_broadcast_scoring_rules').insert(ruleRows);
+        if (ruleError) throw ruleError;
+      }
+
+      await buildSessionTeamsAndPlayers(data.id, selectedMatches as Match[]);
+      setSession(data as BroadcastSessionRow);
+      await loadSession(data.id);
+      show('success', `Broadcast session created with ${requestedCount} match${requestedCount === 1 ? '' : 'es'}.`);
+    } catch (error: any) {
+      console.error('[MVP LIVE] createSession error:', error);
+      show('error', error?.message || 'Failed to create broadcast session.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const updateSession = async (patch: Record<string, any>) => {
+    if (!session?.id || !supabase) return;
+    setLiveAction(true);
+    try {
+      const { data, error } = await supabase.from('live_broadcast_sessions').update(patch).eq('id', session.id).select('*').single();
+      if (error) throw error;
+      setSession(data as BroadcastSessionRow);
+      await loadSession(session.id);
+    } catch (error: any) {
+      console.error('[MVP LIVE] updateSession error:', error);
+      show('error', error?.message || 'Failed to update live session.');
+    } finally {
+      setLiveAction(false);
+    }
+  };
+
+  const getCurrentBroadcastMatch = () => {
+    if (!session) return null;
+    return broadcastMatches.find((item) => item.match_number === session.current_match_number) || broadcastMatches[0] || null;
+  };
+
+  const currentBroadcastMatch = getCurrentBroadcastMatch();
+  const sessionTeams = teams.filter((team) => !currentBroadcastMatch || team.broadcast_match_id === currentBroadcastMatch.id || !team.broadcast_match_id);
+  const sessionPlayers = players.filter((player) => !currentBroadcastMatch || player.broadcast_match_id === currentBroadcastMatch.id || !player.broadcast_match_id);
+
+  const addEvent = async (event: Record<string, any>) => {
+    if (!session?.id || !supabase) return null;
+    const { data, error } = await supabase.from('live_broadcast_events').insert({
+      session_id: session.id,
+      broadcast_match_id: currentBroadcastMatch?.id || null,
+      created_by: (userProfile as any)?.id || null,
+      ...event,
+    }).select('*').single();
+    if (error) throw error;
+    return data;
+  };
+
+  const applyKill = async () => {
+    if (!session || !currentBroadcastMatch || !supabase || !testKillerId) {
+      show('error', 'Select a killer player first.');
+      return;
+    }
+    const killer = sessionPlayers.find((p) => p.id === testKillerId);
+    const victim = testVictimId ? sessionPlayers.find((p) => p.id === testVictimId) : null;
+    if (!killer) {
+      show('error', 'Killer player was not found.');
+      return;
+    }
+    if (victim && victim.id === killer.id) {
+      show('error', 'Killer and victim cannot be the same player.');
+      return;
+    }
+    setLiveAction(true);
+    try {
+      await addEvent({
         event_type: 'kill',
         source: 'admin',
         killer_player_id: killer.id,
@@ -494,289 +446,288 @@ export const LiveBroadcastPanel: React.FC<Props> = ({ isOpen, onClose, matches, 
         killer_team_id: killer.team_id || null,
         victim_team_id: victim?.team_id || null,
         kill_delta: 1,
-        point_delta: killPoints,
-        event_payload: { manually_added: true },
-        created_by: userProfile?.id || null,
-      }]).select('*').single();
-      if (eventError) throw eventError;
-      if (!event) throw new Error('Kill event save nahi hua.');
+        point_delta: Number(rules.find((rule) => rule.type === 'kill' && rule.enabled)?.points || 0),
+        detection_confidence: 1,
+        event_payload: { manual: true, phase: 'phase2-test-control' },
+      });
 
-      if (killer.team_id) {
-        const team = teams.find(t => t.id === killer.team_id);
-        if (team) {
-          await supabase.from('live_broadcast_teams').update({
-            current_match_kills: team.current_match_kills + 1,
-            current_match_points: Number(team.current_match_points) + Number(killPoints),
-            tournament_total_kills: team.tournament_total_kills + 1,
-            tournament_total_points: Number(team.tournament_total_points) + Number(killPoints),
-          }).eq('id', team.id);
-        }
+      const killerTeam = killer.team_id ? sessionTeams.find((team) => team.id === killer.team_id) : null;
+      if (killerTeam) {
+        await supabase.from('live_broadcast_teams').update({
+          current_match_kills: Number(killerTeam.current_match_kills || 0) + 1,
+          current_match_points: Number(killerTeam.current_match_points || 0) + Number(rules.find((rule) => rule.type === 'kill' && rule.enabled)?.points || 0),
+          tournament_total_kills: Number(killerTeam.tournament_total_kills || 0) + 1,
+          tournament_total_points: Number(killerTeam.tournament_total_points || 0) + Number(rules.find((rule) => rule.type === 'kill' && rule.enabled)?.points || 0),
+        }).eq('id', killerTeam.id);
       }
 
       await supabase.from('live_broadcast_players').update({
-        current_match_kills: killer.current_match_kills + 1,
-        tournament_kills: killer.tournament_kills + 1,
+        current_match_kills: Number(killer.current_match_kills || 0) + 1,
+        tournament_kills: Number(killer.tournament_kills || 0) + 1,
       }).eq('id', killer.id);
 
-      if (victim) {
+      if (victim?.id) {
         await supabase.from('live_broadcast_players').update({ is_alive: false }).eq('id', victim.id);
-        if (victim.team_id) {
-          const victimTeam = teams.find(t => t.id === victim.team_id);
-          if (victimTeam) {
-            await supabase.from('live_broadcast_teams').update({
-              current_alive_players: Math.max(0, victimTeam.current_alive_players - 1),
-            }).eq('id', victimTeam.id);
-          }
+      }
+
+      if (victim?.team_id) {
+        const victimTeam = sessionTeams.find((team) => team.id === victim.team_id);
+        if (victimTeam) {
+          await supabase.from('live_broadcast_teams').update({
+            current_alive_players: Math.max(0, Number(victimTeam.current_alive_players || 0) - 1),
+          }).eq('id', victimTeam.id);
         }
       }
 
-      setManualKillerId('');
-      setManualVictimId('');
-      await loadSessionState(session.id);
-      setNotice('Kill event realtime save/update ho gaya.');
-    } catch (e: any) {
-      setError(e?.message || 'Kill add nahi ho saki.');
-    } finally { setBusy(false); }
+      show('success', `${killer.player_name} +1 kill${victim ? ` • ${victim.player_name} eliminated` : ''}.`);
+      setTestVictimId('');
+      await loadSession(session.id);
+    } catch (error: any) {
+      console.error('[MVP LIVE] applyKill error:', error);
+      show('error', error?.message || 'Failed to add live kill.');
+    } finally {
+      setLiveAction(false);
+    }
   };
 
-  const getBroadcastMatchId = async (sessionId: string, matchNumber: number) => {
-    if (!supabase) return null;
-    const { data, error: fetchError } = await supabase.from('live_broadcast_matches').select('id').eq('session_id', sessionId).eq('match_number', matchNumber).single();
-    if (fetchError) throw fetchError;
-    return data?.id || null;
+  const adjustTeamPoints = async (teamId: string, delta: number) => {
+    if (!session || !supabase || !teamId || !Number.isFinite(delta)) return;
+    const team = sessionTeams.find((item) => item.id === teamId);
+    if (!team) return;
+    setLiveAction(true);
+    try {
+      await addEvent({
+        event_type: 'points_adjustment',
+        source: 'admin',
+        killer_team_id: team.id,
+        point_delta: delta,
+        event_payload: { manual: true, reason: 'Admin score correction' },
+      });
+      await supabase.from('live_broadcast_teams').update({
+        current_match_points: Math.max(0, Number(team.current_match_points || 0) + delta),
+        tournament_total_points: Math.max(0, Number(team.tournament_total_points || 0) + delta),
+      }).eq('id', team.id);
+      await loadSession(session.id);
+      show('success', `${team.team_name} points adjusted by ${delta >= 0 ? '+' : ''}${delta}.`);
+    } catch (error: any) {
+      console.error('[MVP LIVE] adjustTeamPoints error:', error);
+      show('error', error?.message || 'Failed to adjust points.');
+    } finally {
+      setLiveAction(false);
+    }
   };
 
-  const nextMatch = async () => {
-    if (!session) return;
+  const advanceMatch = async () => {
+    if (!session || !supabase) return;
     const nextNumber = session.current_match_number + 1;
-    const next = currentSelectedSequence[nextNumber - 1];
-    if (!next) {
-      setError('Selected tournament matches khatam ho gaye hain.');
+    const nextMatch = broadcastMatches.find((item) => item.match_number === nextNumber);
+    if (!nextMatch) {
+      show('info', 'There is no next match configured in this broadcast session.');
       return;
     }
-    setBusy(true);
-    setError('');
+    const nextSource: any = selectableMatches.find((m: any) => String(m.id) === String(nextMatch.match_id));
+    setLiveAction(true);
     try {
-      await refreshParticipantsForMatch(next, nextNumber);
-      setNotice(`Match ${nextNumber} — ${displayMap(next)} live hai.`);
-    } catch (e: any) { setError(e?.message || 'Next match start nahi ho saka.'); }
-    finally { setBusy(false); }
+      if (currentBroadcastMatch) {
+        await supabase.from('live_broadcast_matches').update({
+          status: 'completed',
+          ended_at: new Date().toISOString(),
+        }).eq('id', currentBroadcastMatch.id);
+      }
+      await supabase.from('live_broadcast_matches').update({
+        status: 'live',
+        started_at: new Date().toISOString(),
+      }).eq('id', nextMatch.id);
+
+      await supabase.from('live_broadcast_sessions').update({
+        current_match_number: nextNumber,
+        current_match_id: String(nextMatch.match_id),
+        current_map: nextMatch.map || cleanName(nextSource?.map) || 'Erangel',
+        current_match_type: nextMatch.match_type || getMatchTypeLabel(nextSource),
+        current_squad_type: nextMatch.squad_type || getSquadTypeLabel(nextSource),
+        status: 'live',
+      }).eq('id', session.id);
+
+      // Reset ONLY the new current-match fields. Tournament totals remain intact.
+      // All player snapshots belong to the tournament session, so reset only
+      // current-match state while preserving cumulative tournament kills.
+      for (const player of players) {
+        await supabase.from('live_broadcast_players').update({
+          current_match_kills: 0,
+          is_alive: true,
+          tournament_match_count: Number((player as any).tournament_match_count || 0) + 1,
+        }).eq('id', player.id);
+      }
+      for (const team of sessionTeams) {
+        await supabase.from('live_broadcast_teams').update({
+          current_match_kills: 0,
+          current_match_points: 0,
+          current_alive_players: squadSize,
+          is_eliminated: false,
+        }).eq('id', team.id);
+      }
+
+      await loadSession(session.id);
+      show('success', `MATCH ${nextNumber} is now live. Tournament totals were preserved.`);
+    } catch (error: any) {
+      console.error('[MVP LIVE] advanceMatch error:', error);
+      show('error', error?.message || 'Failed to advance to next match.');
+    } finally {
+      setLiveAction(false);
+    }
   };
 
-  const endSession = async () => {
-    if (!session) return;
-    setBusy(true);
-    setError('');
-    try {
-      await updateSession({ status: 'completed', overlay_enabled: false });
-      setNotice('Broadcast session completed. Data محفوظ hai.');
-    } catch (e: any) { setError(e?.message || 'Session end nahi hui.'); }
-    finally { setBusy(false); }
-  };
-
-  useEffect(() => {
-    if (!session || !supabase) return;
-    const channel = supabase
-      .channel(`live-broadcast-session-${session.id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'live_broadcast_sessions', filter: `id=eq.${session.id}` }, () => loadSessionState(session.id))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'live_broadcast_teams', filter: `session_id=eq.${session.id}` }, () => loadSessionState(session.id))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'live_broadcast_players', filter: `session_id=eq.${session.id}` }, () => loadSessionState(session.id))
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [session?.id]);
-
-  if (!isOpen) return null;
-
-  if (!adminAllowed) {
-    return (
-      <div className="rounded-3xl border border-red-500/30 bg-[#050b14] p-6 text-center shadow-2xl">
-          <ShieldCheck className="w-10 h-10 mx-auto text-red-400 mb-3" />
-          <h2 className="text-lg font-black text-white">Admin Only</h2>
-          <p className="text-sm text-gray-400 mt-2">Live Broadcast Control sirf authorized admin account ke liye available hai.</p>
-          <button onClick={onClose} className="mt-5 px-5 py-2.5 rounded-xl bg-gray-800 text-white font-bold">Close</button>
-      </div>
-    );
-  }
+  if (!isAdmin) return null;
 
   return (
-    <div className="w-full text-white">
-      <div className="w-full overflow-hidden rounded-3xl border border-cyan-400/20 bg-[#030812] shadow-[0_0_80px_rgba(0,229,255,0.12)] flex flex-col">
-        <div className="px-4 sm:px-6 py-4 border-b border-cyan-400/10 bg-gradient-to-r from-cyan-500/10 via-transparent to-purple-500/10 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-2xl bg-cyan-400/10 border border-cyan-400/30 flex items-center justify-center">
-              <Sparkles className="w-6 h-6 text-cyan-300" />
+    <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-200">
+      <div className="relative overflow-hidden rounded-2xl border border-cyan-400/25 bg-gradient-to-br from-[#06182c] via-[#030a16] to-[#04111f] p-4 shadow-2xl">
+        <div className="pointer-events-none absolute -right-20 -top-20 h-44 w-44 rounded-full bg-cyan-400/10 blur-3xl" />
+        <div className="pointer-events-none absolute -left-20 -bottom-24 h-48 w-48 rounded-full bg-fuchsia-500/10 blur-3xl" />
+        <div className="relative flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <div className="flex items-center gap-2 text-cyan-300 text-[10px] font-black tracking-[0.22em] uppercase">
+              <span className="inline-flex h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_12px_rgba(52,211,153,.8)]" />
+              MVP ESPORTS • LIVE BROADCAST ENGINE
             </div>
-            <div>
-              <div className="text-[10px] tracking-[0.28em] uppercase font-black text-cyan-300">MVP ESPORTS • LIVE BROADCAST</div>
-              <h2 className="text-xl font-black">Tournament Broadcast Control Room</h2>
-            </div>
+            <h3 className="mt-1 text-xl font-black tracking-tight text-white">Professional Live Control Room</h3>
+            <p className="mt-1 text-[11px] text-gray-400">Admin-only. Existing player/team bookings remain the source for the broadcast snapshot.</p>
           </div>
-          <button onClick={onClose} className="p-2 rounded-xl bg-white/5 hover:bg-white/10"><X className="w-5 h-5" /></button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5">
-          {!session && (
-            <>
-              <div className="grid lg:grid-cols-[1.3fr_0.7fr] gap-5">
-                <section className="rounded-2xl border border-cyan-400/15 bg-[#07111f] p-4 sm:p-5">
-                  <div className="flex items-center gap-2 mb-4"><Trophy className="w-5 h-5 text-amber-300" /><h3 className="font-black">Tournament / Match Sequence</h3></div>
-                  <p className="text-xs text-gray-400 mb-4">Existing MVP ESPORTS matches se sequence select karein. Existing bookings/player data isi live session mein snapshot honge.</p>
-                  <div className="space-y-3 max-h-72 overflow-y-auto">
-                    {selectableTournamentGroups.map(group => (
-                      <div key={group.title} className="rounded-xl border border-white/5 bg-black/20 p-3">
-                        <div className="text-sm font-black mb-2">{group.title}</div>
-                        <div className="space-y-2">
-                          {group.items.map(match => {
-                            const selected = selectedMatchIds.includes(match.id);
-                            const idx = selectedMatchIds.indexOf(match.id);
-                            return (
-                              <button
-                                key={match.id}
-                                onClick={() => setSelectedMatchIds(prev => selected ? prev.filter(id => id !== match.id) : [...prev, match.id])}
-                                className={`w-full flex items-center justify-between rounded-xl border p-3 text-left transition ${selected ? 'border-cyan-400/40 bg-cyan-400/10' : 'border-white/5 bg-white/[0.02] hover:bg-white/[0.04]'}`}
-                              >
-                                <div>
-                                  <div className="text-xs font-black">{selected ? `MATCH ${idx + 1}` : 'ADD'} • {match.title}</div>
-                                  <div className="text-[10px] text-gray-400 mt-1">{String(match.type).toUpperCase()} • {displayMap(match)} • {match.squad_type}</div>
-                                </div>
-                                {selected ? <CheckCircle2 className="w-5 h-5 text-cyan-300" /> : <ChevronDown className="w-4 h-4 text-gray-500" />}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </section>
-
-                <section className="rounded-2xl border border-purple-400/15 bg-[#07111f] p-4 sm:p-5 space-y-4">
-                  <div className="flex items-center gap-2"><Settings2 className="w-5 h-5 text-purple-300" /><h3 className="font-black">Broadcast Setup</h3></div>
-                  <label className="text-xs text-gray-300">Selected matches
-                    <input type="number" min={1} max={selectedMatchIds.length || 1} value={totalMatches} onChange={e => setTotalMatches(Math.max(1, Number(e.target.value)))} className="mt-1 w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2 text-sm" />
-                  </label>
-                  <label className="text-xs text-gray-300">Kill Points
-                    <input type="number" min={0} step="0.01" value={killPoints} onChange={e => setKillPoints(Math.max(0, Number(e.target.value)))} className="mt-1 w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2 text-sm" />
-                  </label>
-                  <div>
-                    <div className="text-xs font-bold text-gray-300 mb-2">Placement Points</div>
-                    <div className="grid grid-cols-2 gap-2">
-                      {Object.entries(placementPoints).map(([position, value]) => (
-                        <label key={position} className="text-[10px] text-gray-400">TOP {position}
-                          <input type="number" min={0} value={value} onChange={e => setPlacementPoints(prev => ({ ...prev, [Number(position)]: Math.max(0, Number(e.target.value)) }))} className="mt-1 w-full bg-black/30 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white" />
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                  <label className="text-xs text-gray-300">Live Stream URL (optional)
-                    <input value={streamUrl} onChange={e => setStreamUrl(e.target.value)} placeholder="https://youtube.com/..." className="mt-1 w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2 text-sm" />
-                  </label>
-                  <button disabled={busy || !selectedMatchIds.length} onClick={startSession} className="w-full rounded-xl px-4 py-3 font-black text-sm bg-gradient-to-r from-cyan-400 to-blue-500 text-black disabled:opacity-40 flex items-center justify-center gap-2">
-                    <Play className="w-4 h-4" /> CREATE LIVE SESSION
-                  </button>
-                </section>
-              </div>
-            </>
-          )}
-
-          {session && (
-            <>
-              <div className="grid md:grid-cols-4 gap-3">
-                <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4"><div className="text-[10px] text-gray-500 font-bold">MATCH</div><div className="text-2xl font-black mt-1">{session.current_match_number} / {session.total_matches}</div></div>
-                <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4"><div className="text-[10px] text-gray-500 font-bold">MAP</div><div className="text-lg font-black mt-1">{session.current_map || '—'}</div></div>
-                <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4"><div className="text-[10px] text-gray-500 font-bold">FORMAT</div><div className="text-lg font-black mt-1">{session.current_squad_type || '—'}</div></div>
-                <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4"><div className="text-[10px] text-gray-500 font-bold">STATUS</div><div className={`text-lg font-black mt-1 ${session.status === 'live' ? 'text-emerald-300' : 'text-amber-300'}`}>{session.status.toUpperCase()}</div></div>
-              </div>
-
-              <div className="rounded-2xl border border-cyan-400/15 bg-gradient-to-r from-cyan-500/10 via-transparent to-purple-500/10 p-4 flex flex-wrap gap-3 items-center">
-                <div className="flex-1 min-w-[220px]"><div className="text-[10px] tracking-widest text-cyan-300 font-black">{session.tournament_title || 'MVP ESPORTS'}</div><div className="font-black text-lg">MATCH {session.current_match_number} • {session.current_map} • {String(session.current_match_type || '').toUpperCase()}</div></div>
-                <button disabled={busy || session.status === 'completed'} onClick={setLive} className="px-4 py-2.5 rounded-xl bg-emerald-500 text-black font-black text-xs flex items-center gap-2"><Play className="w-4 h-4" /> GO LIVE</button>
-                <button disabled={busy || session.status !== 'live'} onClick={pauseLive} className="px-4 py-2.5 rounded-xl bg-amber-400 text-black font-black text-xs flex items-center gap-2"><Pause className="w-4 h-4" /> PAUSE</button>
-                <button disabled={busy || session.status === 'completed'} onClick={toggleOverlay} className={`px-4 py-2.5 rounded-xl font-black text-xs flex items-center gap-2 ${session.overlay_enabled ? 'bg-cyan-400 text-black' : 'bg-white/10 text-white'}`}>{session.overlay_enabled ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />} OVERLAY {session.overlay_enabled ? 'ON' : 'OFF'}</button>
-                <button disabled={busy || session.status === 'completed'} onClick={endSession} className="px-4 py-2.5 rounded-xl bg-red-500 text-white font-black text-xs flex items-center gap-2"><CircleStop className="w-4 h-4" /> END</button>
-              </div>
-
-              <div className="grid lg:grid-cols-[1fr_360px] gap-5">
-                <section className="rounded-2xl border border-white/10 bg-[#07111f] overflow-hidden">
-                  <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between"><div className="flex items-center gap-2"><Activity className="w-4 h-4 text-cyan-300" /><span className="font-black">LIVE TEAM LEADERBOARD</span></div><span className="text-[10px] text-gray-500">{teams.length} TEAMS</span></div>
-                  <div className="p-3 space-y-2 max-h-[430px] overflow-y-auto">
-                    {teams.map((team, idx) => (
-                      <div key={team.id} className="rounded-xl border border-white/5 bg-black/20 p-3 flex items-center gap-3">
-                        <div className="w-8 text-center text-sm font-black text-amber-300">#{idx + 1}</div>
-                        <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-cyan-400/20 to-purple-400/20 border border-white/10 flex items-center justify-center font-black">{team.team_name.slice(0, 2).toUpperCase()}</div>
-                        <div className="flex-1 min-w-0"><div className="font-black truncate">{team.team_name}</div><div className="text-[10px] text-gray-500">ALIVE {team.current_alive_players}</div></div>
-                        <div className="text-right"><div className="text-[10px] text-gray-500">KILLS</div><div className="font-black text-cyan-300">{team.current_match_kills}</div></div>
-                        <div className="text-right min-w-14"><div className="text-[10px] text-gray-500">PTS</div><div className="font-black text-white">{team.tournament_total_points}</div></div>
-                      </div>
-                    ))}
-                    {!teams.length && <div className="text-sm text-gray-500 text-center py-10">No teams loaded.</div>}
-                  </div>
-                </section>
-
-                <section className="space-y-4">
-                  <div className="rounded-2xl border border-cyan-400/15 bg-[#07111f] p-4">
-                    <div className="flex items-center gap-2 mb-3"><Flame className="w-4 h-4 text-orange-300" /><span className="font-black">ADMIN KILL CONTROL</span></div>
-                    <select value={manualKillerId} onChange={e => setManualKillerId(e.target.value)} className="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2 text-sm">
-                      <option value="">Select Killer</option>
-                      {players.filter(p => p.is_alive).map(p => <option key={p.id} value={p.id}>{p.player_name}</option>)}
-                    </select>
-                    <select value={manualVictimId} onChange={e => setManualVictimId(e.target.value)} className="mt-2 w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2 text-sm">
-                      <option value="">Victim optional</option>
-                      {players.filter(p => p.is_alive && p.id !== manualKillerId).map(p => <option key={p.id} value={p.id}>{p.player_name}</option>)}
-                    </select>
-                    <button disabled={busy || !manualKillerId || session.status === 'completed'} onClick={addKill} className="mt-3 w-full rounded-xl bg-gradient-to-r from-orange-400 to-red-500 text-black font-black text-xs px-4 py-3 disabled:opacity-40">+ CONFIRM KILL EVENT</button>
-                    <p className="text-[10px] text-gray-500 mt-2">Phase 2 manual fallback. Automatic video/OCR detection Phase 7 mein connect hoga.</p>
-                  </div>
-
-                  <div className="rounded-2xl border border-amber-400/15 bg-[#07111f] p-4">
-                    <div className="flex items-center gap-2 mb-3"><Settings2 className="w-4 h-4 text-amber-300" /><span className="font-black">LIVE SCORING RULES</span></div>
-                    <div className="flex gap-2 items-end">
-                      <label className="flex-1 text-[10px] text-gray-400">KILL POINTS
-                        <input type="number" min={0} step="0.01" value={killPoints} onChange={e => setKillPoints(Math.max(0, Number(e.target.value)))} className="mt-1 w-full bg-black/30 border border-white/10 rounded-lg px-2 py-2 text-sm text-white" />
-                      </label>
-                      <button disabled={savingScoreRules} onClick={async () => {
-                        if (!supabase || !session) return;
-                        setSavingScoreRules(true); setError('');
-                        try {
-                          await supabase.from('live_broadcast_scoring_rules').delete().eq('session_id', session.id);
-                          await saveScoringRules(session.id);
-                          await supabase.from('live_broadcast_matches').update({ scoring_snapshot: { kill_points: killPoints, placement_points: placementPoints } }).eq('session_id', session.id).eq('match_number', session.current_match_number);
-                          setNotice('Live scoring rules update ho gaye.');
-                        } catch (e: any) { setError(e?.message || 'Scoring rules save nahi ho sake.'); }
-                        finally { setSavingScoreRules(false); }
-                      }} className="px-3 py-2 rounded-lg bg-amber-400 text-black font-black text-[10px] disabled:opacity-40"><Save className="w-3 h-3 inline mr-1" /> SAVE</button>
-                    </div>
-                    <div className="grid grid-cols-5 gap-2 mt-3">
-                      {Object.entries(placementPoints).map(([position, value]) => (
-                        <label key={position} className="text-[9px] text-gray-500">TOP {position}
-                          <input type="number" min={0} value={value} onChange={e => setPlacementPoints(prev => ({ ...prev, [Number(position)]: Math.max(0, Number(e.target.value)) }))} className="mt-1 w-full bg-black/30 border border-white/10 rounded-lg px-2 py-1.5 text-[11px] text-white" />
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="rounded-2xl border border-white/10 bg-[#07111f] p-4">
-                    <div className="flex items-center gap-2 mb-3"><Users className="w-4 h-4 text-purple-300" /><span className="font-black">PLAYER STATE</span><button onClick={() => setShowAllPlayers(v => !v)} className="ml-auto text-[10px] text-cyan-300">{showAllPlayers ? 'HIDE' : 'SHOW'}</button></div>
-                    <div className="space-y-1.5 max-h-64 overflow-y-auto">
-                      {(showAllPlayers ? players : players.slice(0, 8)).map(p => <div key={p.id} className="flex items-center justify-between text-xs rounded-lg bg-white/[0.02] px-2 py-1.5"><span className="truncate pr-2">{p.player_name}</span><span className={p.is_alive ? 'text-emerald-300 font-bold' : 'text-red-300 font-bold'}>{p.is_alive ? 'ALIVE' : 'OUT'} • {p.current_match_kills} K</span></div>)}
-                    </div>
-                  </div>
-                </section>
-              </div>
-
-              <div className="rounded-2xl border border-purple-400/15 bg-[#07111f] p-4 flex flex-wrap items-center gap-3">
-                <div className="mr-auto"><div className="text-[10px] text-purple-300 tracking-widest font-black">TOURNAMENT PROGRESSION</div><div className="font-black">Match {session.current_match_number} of {session.total_matches}</div></div>
-                <button disabled={busy || session.status === 'completed' || currentMatchIndex >= currentSelectedSequence.length - 1} onClick={nextMatch} className="px-4 py-2.5 rounded-xl bg-purple-500 text-white font-black text-xs flex items-center gap-2 disabled:opacity-40"><SkipForward className="w-4 h-4" /> NEXT MATCH</button>
-                <button disabled={busy} onClick={() => loadSessionState(session.id)} className="px-4 py-2.5 rounded-xl bg-white/10 text-white font-black text-xs flex items-center gap-2"><RotateCcw className="w-4 h-4" /> REFRESH</button>
-              </div>
-            </>
-          )}
-
-          {error && <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300 flex items-center gap-2"><AlertCircle className="w-4 h-4" /> {error}</div>}
-          {notice && <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-300 flex items-center gap-2"><Save className="w-4 h-4" /> {notice}</div>}
-
-          <div className="text-[10px] text-gray-600 flex items-center gap-2"><ShieldCheck className="w-3 h-3" /> Existing MVP ESPORTS booking/wallet/deposit/withdrawal tables are not modified by this module.</div>
+          <div className="flex flex-wrap gap-2 text-[9px] font-black uppercase">
+            <span className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-2.5 py-1 text-cyan-300">Realtime</span>
+            <span className="rounded-full border border-fuchsia-400/20 bg-fuchsia-400/10 px-2.5 py-1 text-fuchsia-300">VIP UI</span>
+            <span className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-2.5 py-1 text-emerald-300">Admin Only</span>
+          </div>
         </div>
       </div>
+
+      {message && (
+        <div className={`rounded-xl border px-3 py-2 text-xs font-bold ${message.type === 'success' ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : message.type === 'error' ? 'border-red-500/30 bg-red-500/10 text-red-300' : 'border-cyan-500/30 bg-cyan-500/10 text-cyan-300'}`}>
+          {message.text}
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+        <div className="xl:col-span-2 rounded-2xl border border-gray-800 bg-[#030a16] p-4 space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label className="mb-1 block text-[10px] font-black uppercase tracking-wider text-gray-400">Tournament</label>
+              <select value={selectedTournamentKey} onChange={(e) => { setSelectedTournamentKey(e.target.value); const group = tournamentGroups.find((g) => g.key === e.target.value); setSelectedMatchId(group?.matches[0]?.id || ''); }} className="w-full rounded-xl border border-gray-700 bg-[#07192e] px-3 py-2.5 text-xs font-bold text-white outline-none focus:border-cyan-400">
+                <option value="">Select tournament</option>
+                {tournamentGroups.map((group) => <option key={group.key} value={group.key}>{group.title} • {group.matches.length} match{group.matches.length === 1 ? '' : 'es'}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-[10px] font-black uppercase tracking-wider text-gray-400">Starting Match</label>
+              <select value={selectedMatchId} onChange={(e) => setSelectedMatchId(e.target.value)} className="w-full rounded-xl border border-gray-700 bg-[#07192e] px-3 py-2.5 text-xs font-bold text-white outline-none focus:border-cyan-400">
+                <option value="">Select match</option>
+                {(activeTournament?.matches || selectableMatches).map((match: any) => <option key={match.id} value={match.id}>{match.title || `Match ${match.id}`} • {getMatchMaps(match)[0] || 'Erangel'} • {getMatchTypeLabel(match)}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            <div className="rounded-xl border border-cyan-400/20 bg-cyan-400/5 p-3"><div className="text-[9px] font-black uppercase text-gray-500">Map</div><div className="mt-1 text-sm font-black text-white">{getMatchMaps(currentMatch)[selectedMapIndex] || getMatchMaps(currentMatch)[0] || 'Erangel'}</div></div>
+            <div className="rounded-xl border border-fuchsia-400/20 bg-fuchsia-400/5 p-3"><div className="text-[9px] font-black uppercase text-gray-500">Mode</div><div className="mt-1 text-sm font-black text-white">{getMatchTypeLabel(currentMatch)}</div></div>
+            <div className="rounded-xl border border-amber-400/20 bg-amber-400/5 p-3"><div className="text-[9px] font-black uppercase text-gray-500">Format</div><div className="mt-1 text-sm font-black text-white">{getSquadTypeLabel(currentMatch) || 'SQUAD'}</div></div>
+            <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/5 p-3"><div className="text-[9px] font-black uppercase text-gray-500">Matches</div><div className="mt-1 text-sm font-black text-white">{totalMatches}</div></div>
+          </div>
+
+          {getMatchMaps(currentMatch).length > 1 && (
+            <div className="flex flex-wrap gap-2">
+              {getMatchMaps(currentMatch).map((mapName, index) => <button key={`${mapName}-${index}`} type="button" onClick={() => setSelectedMapIndex(index)} className={`rounded-lg border px-3 py-1.5 text-[10px] font-black transition-all ${selectedMapIndex === index ? 'border-cyan-400 bg-cyan-400/10 text-cyan-300' : 'border-gray-700 bg-[#07192e] text-gray-400 hover:text-white'}`}>MAP {index + 1} • {mapName}</button>)}
+            </div>
+          )}
+
+          <div>
+            <label className="mb-1 block text-[10px] font-black uppercase tracking-wider text-gray-400">Live Stream URL (optional in Phase 2)</label>
+            <input value={streamUrl} onChange={(e) => setStreamUrl(e.target.value)} placeholder="https://youtube.com/live/..." className="w-full rounded-xl border border-gray-700 bg-[#07192e] px-3 py-2.5 text-xs text-white outline-none focus:border-cyan-400" />
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={createSession} disabled={loading || Boolean(session)} className="rounded-xl bg-gradient-to-r from-cyan-400 to-blue-500 px-4 py-2.5 text-[10px] font-black uppercase tracking-wider text-[#03101d] shadow-lg disabled:cursor-not-allowed disabled:opacity-40">{loading ? 'Creating…' : session ? 'Session Created' : 'Create Broadcast Session'}</button>
+            {session && <button type="button" onClick={() => updateSession({ status: 'live', overlay_enabled: true, scoreboard_enabled: true })} disabled={liveAction} className="rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-2.5 text-[10px] font-black uppercase text-emerald-300 disabled:opacity-40">GO LIVE</button>}
+            {session && <button type="button" onClick={() => updateSession({ status: 'paused' })} disabled={liveAction} className="rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-2.5 text-[10px] font-black uppercase text-amber-300 disabled:opacity-40">PAUSE</button>}
+            {session && <button type="button" onClick={() => updateSession({ status: 'completed', overlay_enabled: false })} disabled={liveAction} className="rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-2.5 text-[10px] font-black uppercase text-red-300 disabled:opacity-40">END BROADCAST</button>}
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-gray-800 bg-[#030a16] p-4 space-y-3">
+          <div className="flex items-center justify-between"><h4 className="text-xs font-black uppercase tracking-wider text-cyan-300">Scoring Rules</h4><span className="text-[9px] text-gray-500">Admin editable</span></div>
+          {rules.map((rule) => (
+            <div key={rule.key} className="grid grid-cols-[1fr_72px_28px] items-center gap-2 rounded-xl border border-gray-800 bg-[#07192e]/70 p-2">
+              <div><div className="text-[10px] font-black text-white">{rule.label}</div><div className="text-[8px] text-gray-500">{rule.type === 'kill' ? 'Every confirmed kill' : 'Placement points'}</div></div>
+              <input type="number" value={rule.points} onChange={(e) => setRules((prev) => prev.map((item) => item.key === rule.key ? { ...item, points: Number(e.target.value) || 0 } : item))} className="w-full rounded-lg border border-gray-700 bg-[#030a16] px-2 py-1.5 text-center text-xs font-black text-white" />
+              <input type="checkbox" checked={rule.enabled} onChange={(e) => setRules((prev) => prev.map((item) => item.key === rule.key ? { ...item, enabled: e.target.checked } : item))} className="h-4 w-4 accent-cyan-400" />
+            </div>
+          ))}
+          <div className="rounded-xl border border-cyan-400/15 bg-cyan-400/5 p-2.5 text-[9px] leading-relaxed text-gray-400">The per-match scoring snapshot is stored with the broadcast match, so later rule edits do not rewrite old match history.</div>
+        </div>
+      </div>
+
+      {session && (
+        <>
+          <div className="rounded-2xl border border-cyan-400/20 bg-[#030a16] p-4">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div><div className="text-[9px] font-black uppercase tracking-wider text-cyan-300">Current Broadcast</div><div className="mt-1 text-xl font-black text-white">MATCH {session.current_match_number} • {session.current_map || 'MAP'} • {session.current_squad_type || 'SQUAD'}</div><div className="mt-1 text-[10px] text-gray-500">Status: <span className="font-black text-emerald-300">{session.status.toUpperCase()}</span> • Session: {session.id.slice(0, 8)}…</div></div>
+              <div className="flex flex-wrap gap-2">
+                <button type="button" onClick={() => updateSession({ overlay_enabled: !session.overlay_enabled })} disabled={liveAction} className={`rounded-xl border px-3 py-2 text-[10px] font-black uppercase ${session.overlay_enabled ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-300' : 'border-gray-700 bg-[#07192e] text-gray-400'}`}>Overlay {session.overlay_enabled ? 'ON' : 'OFF'}</button>
+                <button type="button" onClick={() => updateSession({ scoreboard_enabled: !session.scoreboard_enabled })} disabled={liveAction} className={`rounded-xl border px-3 py-2 text-[10px] font-black uppercase ${session.scoreboard_enabled ? 'border-cyan-400/30 bg-cyan-400/10 text-cyan-300' : 'border-gray-700 bg-[#07192e] text-gray-400'}`}>Table {session.scoreboard_enabled ? 'ON' : 'OFF'}</button>
+                <button type="button" onClick={() => updateSession({ top_three_enabled: !session.top_three_enabled })} disabled={liveAction} className={`rounded-xl border px-3 py-2 text-[10px] font-black uppercase ${session.top_three_enabled ? 'border-fuchsia-400/30 bg-fuchsia-400/10 text-fuchsia-300' : 'border-gray-700 bg-[#07192e] text-gray-400'}`}>Top 3 {session.top_three_enabled ? 'ON' : 'OFF'}</button>
+                <button type="button" onClick={() => updateSession({ bottom_bar_enabled: !session.bottom_bar_enabled })} disabled={liveAction} className={`rounded-xl border px-3 py-2 text-[10px] font-black uppercase ${session.bottom_bar_enabled ? 'border-amber-400/30 bg-amber-400/10 text-amber-300' : 'border-gray-700 bg-[#07192e] text-gray-400'}`}>Bottom Bar {session.bottom_bar_enabled ? 'ON' : 'OFF'}</button>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+            <div className="xl:col-span-2 rounded-2xl border border-gray-800 bg-[#030a16] p-4">
+              <div className="mb-3 flex items-center justify-between"><div><h4 className="text-xs font-black uppercase tracking-wider text-white">Live Team Leaderboard</h4><p className="text-[9px] text-gray-500">Team → Kills → Points → Alive</p></div><span className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-2 py-1 text-[9px] font-black text-cyan-300">REALTIME</span></div>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[560px] text-left text-[10px]">
+                  <thead><tr className="border-b border-gray-800 text-[9px] uppercase tracking-wider text-gray-500"><th className="px-2 py-2">#</th><th className="px-2 py-2">Team</th><th className="px-2 py-2">Kills</th><th className="px-2 py-2">Points</th><th className="px-2 py-2">Alive</th><th className="px-2 py-2">Correction</th></tr></thead>
+                  <tbody>
+                    {sessionTeams.sort((a, b) => Number(b.tournament_total_points) - Number(a.tournament_total_points)).map((team, index) => (
+                      <tr key={team.id} className="border-b border-gray-900 hover:bg-cyan-400/5">
+                        <td className="px-2 py-2 font-black text-gray-500">{index + 1}</td>
+                        <td className="px-2 py-2"><div className="flex items-center gap-2"><div className="flex h-7 w-7 items-center justify-center overflow-hidden rounded-lg border border-gray-700 bg-[#07192e] text-[9px] font-black text-cyan-300">{team.team_logo_url ? <img src={team.team_logo_url} alt="" className="h-full w-full object-cover" /> : 'M'}</div><div><div className="font-black text-white">{team.team_name}</div><div className="text-[8px] text-gray-500">Tournament Total</div></div></div></td>
+                        <td className="px-2 py-2 font-black text-cyan-300">{team.current_match_kills}</td>
+                        <td className="px-2 py-2 font-black text-amber-300">{team.tournament_total_points}</td>
+                        <td className="px-2 py-2 font-black text-emerald-300">{team.current_alive_players}</td>
+                        <td className="px-2 py-2"><div className="flex gap-1"><button type="button" onClick={() => adjustTeamPoints(team.id, Number(pointsAdjustment || 0))} disabled={!Number(pointsAdjustment) || liveAction} className="rounded-lg border border-amber-400/20 bg-amber-400/10 px-2 py-1 text-[8px] font-black text-amber-300 disabled:opacity-30">APPLY</button><button type="button" onClick={() => adjustTeamPoints(team.id, 1)} disabled={liveAction} className="rounded-lg border border-emerald-400/20 bg-emerald-400/10 px-2 py-1 text-[8px] font-black text-emerald-300">+1</button><button type="button" onClick={() => adjustTeamPoints(team.id, -1)} disabled={liveAction} className="rounded-lg border border-red-400/20 bg-red-400/10 px-2 py-1 text-[8px] font-black text-red-300">-1</button></div></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="mt-3 flex flex-wrap items-center gap-2"><input type="number" value={pointsAdjustment} onChange={(e) => setPointsAdjustment(e.target.value)} placeholder="Points ±" className="w-24 rounded-lg border border-gray-700 bg-[#07192e] px-2.5 py-2 text-[10px] font-black text-white" /><span className="text-[9px] text-gray-500">Select any team row and use APPLY for manual correction.</span></div>
+            </div>
+
+            <div className="rounded-2xl border border-gray-800 bg-[#030a16] p-4 space-y-3">
+              <div><h4 className="text-xs font-black uppercase tracking-wider text-white">Kill Control / Test Input</h4><p className="mt-1 text-[9px] text-gray-500">Phase 2 manual engine. Automatic OCR attaches later.</p></div>
+              <select value={testKillerId} onChange={(e) => setTestKillerId(e.target.value)} className="w-full rounded-xl border border-gray-700 bg-[#07192e] px-3 py-2.5 text-xs font-bold text-white"><option value="">Select killer</option>{sessionPlayers.map((player) => <option key={player.id} value={player.id}>{player.player_name}</option>)}</select>
+              <select value={testVictimId} onChange={(e) => setTestVictimId(e.target.value)} className="w-full rounded-xl border border-gray-700 bg-[#07192e] px-3 py-2.5 text-xs font-bold text-white"><option value="">No victim / unknown</option>{sessionPlayers.map((player) => <option key={player.id} value={player.id}>{player.player_name}</option>)}</select>
+              <button type="button" onClick={applyKill} disabled={liveAction || !testKillerId} className="w-full rounded-xl bg-gradient-to-r from-fuchsia-500 to-cyan-400 px-3 py-3 text-[10px] font-black uppercase tracking-wider text-[#020710] disabled:cursor-not-allowed disabled:opacity-40">+ CONFIRMED KILL</button>
+              <div className="rounded-xl border border-amber-400/15 bg-amber-400/5 p-3 text-[9px] leading-relaxed text-gray-400"><span className="font-black text-amber-300">Rule:</span> This Phase 2 button represents a confirmed elimination. Knock/uncertain events must not be auto-counted as a kill.</div>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-gray-800 bg-[#030a16] p-4">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div><h4 className="text-xs font-black uppercase tracking-wider text-white">Broadcast Preview State</h4><p className="text-[9px] text-gray-500">This is the data/state source the future transparent overlay will consume.</p></div>
+              <div className="flex flex-wrap gap-2"><span className={`rounded-full px-2 py-1 text-[8px] font-black uppercase ${visible.scoreboard ? 'bg-cyan-400/10 text-cyan-300' : 'bg-gray-800 text-gray-500'}`}>Scoreboard {visible.scoreboard ? 'ON' : 'OFF'}</span><span className={`rounded-full px-2 py-1 text-[8px] font-black uppercase ${visible.top3 ? 'bg-fuchsia-400/10 text-fuchsia-300' : 'bg-gray-800 text-gray-500'}`}>Top 3 {visible.top3 ? 'ON' : 'OFF'}</span><span className={`rounded-full px-2 py-1 text-[8px] font-black uppercase ${visible.bottom ? 'bg-amber-400/10 text-amber-300' : 'bg-gray-800 text-gray-500'}`}>Bottom Bar {visible.bottom ? 'ON' : 'OFF'}</span></div>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-emerald-400/20 bg-emerald-400/5 p-4">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div><div className="text-[9px] font-black uppercase tracking-wider text-emerald-300">Match Progress</div><div className="mt-1 text-lg font-black text-white">Match {session.current_match_number} of {session.total_matches}</div><div className="text-[9px] text-gray-500">Previous tournament points remain preserved when the next match starts.</div></div>
+              <button type="button" onClick={advanceMatch} disabled={liveAction || session.current_match_number >= session.total_matches} className="rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-2.5 text-[10px] font-black uppercase text-emerald-300 disabled:cursor-not-allowed disabled:opacity-30">NEXT MATCH →</button>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 };
+
+export default LiveBroadcastPanel;
