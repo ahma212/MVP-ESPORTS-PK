@@ -7,6 +7,7 @@ import { AdminChatPanel } from './AdminChatPanel';
 import { AdminRulesPanel } from './AdminRulesPanel';
 import { AdminPlayersHub } from './AdminPlayersHub';
 import { PubgSeatGrid } from './PubgSeatGrid';
+import { LiveBroadcastPanel } from './LiveBroadcastPanel';
 import { ChatMessage } from '../types';
 // Safe Push Notification Helper
 const sendPushNotification = (payload: any) => {
@@ -71,7 +72,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
   onSaveLiveStream,
   onDeleteLiveStream
 }) => {
-  const [activeTab, setActiveTab] = useState<'publish' | 'slots' | 'results' | 'manage_matches' | 'create' | 'deposits' | 'withdrawals' | 'tx_history' | 'audit' | 'announcements' | 'polls' | 'livestreams' | 'rewards' | 'bans' | 'chats' | 'manage_rules' | 'players_hub' | 'leaderboard_video_manager'>('players_hub');
+  const [activeTab, setActiveTab] = useState<'publish' | 'slots' | 'results' | 'manage_matches' | 'create' | 'deposits' | 'withdrawals' | 'tx_history' | 'audit' | 'announcements' | 'polls' | 'livestreams' | 'rewards' | 'bans' | 'chats' | 'manage_rules' | 'players_hub' | 'leaderboard_video_manager' | 'live_broadcast'>('players_hub');
   
   // Poll creation state
   const [pollQuestion, setPollQuestion] = useState('');
@@ -3421,6 +3422,18 @@ try {
           >
             <Video className="w-3.5 h-3.5 text-[#00e5ff]" />
             Live Streams
+          </button>
+
+          <button
+            onClick={() => setActiveTab('live_broadcast')}
+            className={`px-3 py-2.5 text-[11px] font-black transition-all border-b-2 flex items-center gap-1 whitespace-nowrap ${
+              activeTab === 'live_broadcast'
+                ? 'border-fuchsia-400 text-fuchsia-300 bg-fuchsia-500/10'
+                : 'border-transparent text-gray-400 hover:text-white'
+            }`}
+          >
+            <Activity className="w-3.5 h-3.5 text-fuchsia-400 animate-pulse" />
+            LIVE BROADCAST
           </button>
 
           <button
@@ -7050,6 +7063,14 @@ try {
                 )}
               </div>
             </div>
+          )}
+
+          {/* TAB: LIVE BROADCAST ENGINE (PHASE 2) */}
+          {activeTab === 'live_broadcast' && (
+            <LiveBroadcastPanel
+              matches={matches}
+              userProfile={userProfile}
+            />
           )}
 
           {/* TAB 10: LIVE STREAM SYSTEM MANAGER */}
