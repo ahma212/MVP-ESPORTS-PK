@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { Match, UserProfile } from '../types';
+import { applyLiveBroadcastEvent, reverseLiveBroadcastEvent, advanceLiveBroadcastMatch, snapshotLiveBroadcastMatch } from '../lib/liveBroadcastEngine';
 
 type BroadcastSessionRow = {
   id: string;
@@ -188,12 +189,17 @@ export const LiveBroadcastPanel: React.FC<LiveBroadcastPanelProps> = ({ matches,
   const [broadcastMatches, setBroadcastMatches] = useState<BroadcastMatchRow[]>([]);
   const [teams, setTeams] = useState<BroadcastTeamRow[]>([]);
   const [players, setPlayers] = useState<BroadcastPlayerRow[]>([]);
+  const [recentEvents, setRecentEvents] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
   const [liveAction, setLiveAction] = useState(false);
   const [testKillerId, setTestKillerId] = useState('');
   const [testVictimId, setTestVictimId] = useState('');
   const [pointsAdjustment, setPointsAdjustment] = useState('0');
+  const [selectedTeamId, setSelectedTeamId] = useState('');
+  const [selectedPlacement, setSelectedPlacement] = useState('1');
+  const [lastEventId, setLastEventId] = useState('');
+  const [savingRules, setSavingRules] = useState(false);
   const [visible, setVisible] = useState({ scoreboard: false, top3: false, bottom: true });
 
   const activeTournament = useMemo(() => {
@@ -217,11 +223,12 @@ export const LiveBroadcastPanel: React.FC<LiveBroadcastPanelProps> = ({ matches,
 
   const loadSession = async (sessionId: string) => {
     if (!supabase || !sessionId) return;
-    const [{ data: sessionData }, { data: matchData }, { data: teamData }, { data: playerData }] = await Promise.all([
+    const [{ data: sessionData }, { data: matchData }, { data: teamData }, { data: playerData }, { data: eventData }] = await Promise.all([
       supabase.from('live_broadcast_sessions').select('*').eq('id', sessionId).maybeSingle(),
       supabase.from('live_broadcast_matches').select('*').eq('session_id', sessionId).order('match_number', { ascending: true }),
       supabase.from('live_broadcast_teams').select('*').eq('session_id', sessionId).order('rank', { ascending: true, nullsFirst: false }),
       supabase.from('live_broadcast_players').select('*').eq('session_id', sessionId).order('player_name', { ascending: true }),
+      supabase.from('live_broadcast_events').select('*').eq('session_id', sessionId).order('created_at', { ascending: false }).limit(25),
     ]);
     if (sessionData) {
       setSession(sessionData as BroadcastSessionRow);
@@ -235,6 +242,7 @@ export const LiveBroadcastPanel: React.FC<LiveBroadcastPanelProps> = ({ matches,
     setBroadcastMatches((matchData || []) as BroadcastMatchRow[]);
     setTeams((teamData || []) as BroadcastTeamRow[]);
     setPlayers((playerData || []) as BroadcastPlayerRow[]);
+    setRecentEvents(eventData || []);
   };
 
   useEffect(() => {
@@ -477,88 +485,112 @@ export const LiveBroadcastPanel: React.FC<LiveBroadcastPanelProps> = ({ matches,
     }
   };
 
+  const saveScoringRules = async () => {
+    if (!session || !supabase) {
+      show('error', 'Create a broadcast session first.');
+      return;
+    }
+    setSavingRules(true);
+    try {
+      for (const rule of rules) {
+        let query = supabase
+          .from('live_broadcast_scoring_rules')
+          .update({
+            rule_type: rule.type,
+            placement_position: rule.placement_position,
+            points: Number(rule.points || 0),
+            is_enabled: Boolean(rule.enabled),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('session_id', session.id)
+          .eq('rule_type', rule.type);
+
+        query = rule.placement_position === null
+          ? query.is('placement_position', null)
+          : query.eq('placement_position', rule.placement_position);
+
+        const { error } = await query;
+        if (error) throw error;
+      }
+
+      await supabase
+        .from('live_broadcast_matches')
+        .update({
+          scoring_snapshot: rules,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('session_id', session.id)
+        .eq('match_number', session.current_match_number);
+
+      show('success', 'Scoring rules saved. New scoring applies to future events; previous match snapshots stay preserved.');
+      await loadSession(session.id);
+    } catch (error: any) {
+      console.error('[MVP LIVE] saveScoringRules error:', error);
+      show('error', error?.message || 'Failed to save scoring rules.');
+    } finally {
+      setSavingRules(false);
+    }
+  };
+
   const getCurrentBroadcastMatch = () => {
     if (!session) return null;
     return broadcastMatches.find((item) => item.match_number === session.current_match_number) || broadcastMatches[0] || null;
   };
 
   const currentBroadcastMatch = getCurrentBroadcastMatch();
-  const sessionTeams = teams.filter((team) => !currentBroadcastMatch || team.broadcast_match_id === currentBroadcastMatch.id || !team.broadcast_match_id);
-  const sessionPlayers = players.filter((player) => !currentBroadcastMatch || player.broadcast_match_id === currentBroadcastMatch.id || !player.broadcast_match_id);
+  // Team/player snapshots belong to the whole broadcast session so tournament
+  // totals can carry from Match 1 -> Match 2 -> Match 3 without duplicating rosters.
+  const sessionTeams = teams;
+  const sessionPlayers = players;
 
-  const addEvent = async (event: Record<string, any>) => {
-    if (!session?.id || !supabase) return null;
-    const { data, error } = await supabase.from('live_broadcast_events').insert({
-      session_id: session.id,
-      broadcast_match_id: currentBroadcastMatch?.id || null,
-      created_by: (userProfile as any)?.id || null,
-      ...event,
-    }).select('*').single();
-    if (error) throw error;
-    return data;
-  };
+  const getKillPoints = () => Number(rules.find((rule) => rule.type === 'kill' && rule.enabled)?.points || 0);
 
   const applyKill = async () => {
-    if (!session || !currentBroadcastMatch || !supabase || !testKillerId) {
+    if (!session || !currentBroadcastMatch || !testKillerId) {
       show('error', 'Select a killer player first.');
       return;
     }
+
     const killer = sessionPlayers.find((p) => p.id === testKillerId);
     const victim = testVictimId ? sessionPlayers.find((p) => p.id === testVictimId) : null;
     if (!killer) {
       show('error', 'Killer player was not found.');
       return;
     }
-    if (victim && victim.id === killer.id) {
+    if (!victim) {
+      show('error', 'For a confirmed kill, select the eliminated player.');
+      return;
+    }
+    if (victim.id === killer.id) {
       show('error', 'Killer and victim cannot be the same player.');
       return;
     }
+    if (!victim.is_alive) {
+      show('error', 'That player is already eliminated. Duplicate kill blocked.');
+      return;
+    }
+
     setLiveAction(true);
     try {
-      await addEvent({
-        event_type: 'kill',
+      const result = await applyLiveBroadcastEvent({
+        sessionId: session.id,
+        broadcastMatchId: currentBroadcastMatch.id,
+        eventType: 'kill',
         source: 'admin',
-        killer_player_id: killer.id,
-        victim_player_id: victim?.id || null,
-        killer_team_id: killer.team_id || null,
-        victim_team_id: victim?.team_id || null,
-        kill_delta: 1,
-        point_delta: Number(rules.find((rule) => rule.type === 'kill' && rule.enabled)?.points || 0),
-        detection_confidence: 1,
-        event_payload: { manual: true, phase: 'phase2-test-control' },
+        killerPlayerId: killer.id,
+        victimPlayerId: victim.id,
+        killerTeamId: killer.team_id || null,
+        victimTeamId: victim.team_id || null,
+        killDelta: 1,
+        pointDelta: getKillPoints(),
+        detectionConfidence: 1,
+        payload: { manual: true, confirmed: true, phase: 'phase3-engine' },
       });
 
-      const killerTeam = killer.team_id ? sessionTeams.find((team) => team.id === killer.team_id) : null;
-      if (killerTeam) {
-        await supabase.from('live_broadcast_teams').update({
-          current_match_kills: Number(killerTeam.current_match_kills || 0) + 1,
-          current_match_points: Number(killerTeam.current_match_points || 0) + Number(rules.find((rule) => rule.type === 'kill' && rule.enabled)?.points || 0),
-          tournament_total_kills: Number(killerTeam.tournament_total_kills || 0) + 1,
-          tournament_total_points: Number(killerTeam.tournament_total_points || 0) + Number(rules.find((rule) => rule.type === 'kill' && rule.enabled)?.points || 0),
-        }).eq('id', killerTeam.id);
-      }
-
-      await supabase.from('live_broadcast_players').update({
-        current_match_kills: Number(killer.current_match_kills || 0) + 1,
-        tournament_kills: Number(killer.tournament_kills || 0) + 1,
-      }).eq('id', killer.id);
-
-      if (victim?.id) {
-        await supabase.from('live_broadcast_players').update({ is_alive: false }).eq('id', victim.id);
-      }
-
-      if (victim?.team_id) {
-        const victimTeam = sessionTeams.find((team) => team.id === victim.team_id);
-        if (victimTeam) {
-          await supabase.from('live_broadcast_teams').update({
-            current_alive_players: Math.max(0, Number(victimTeam.current_alive_players || 0) - 1),
-          }).eq('id', victimTeam.id);
-        }
-      }
-
-      show('success', `${killer.player_name} +1 kill${victim ? ` • ${victim.player_name} eliminated` : ''}.`);
+      setLastEventId(String(result?.event_id || ''));
       setTestVictimId('');
       await loadSession(session.id);
+      show('success', `${killer.player_name} +1 kill • ${victim.player_name} eliminated.`);
     } catch (error: any) {
       console.error('[MVP LIVE] applyKill error:', error);
       show('error', error?.message || 'Failed to add live kill.');
@@ -567,23 +599,128 @@ export const LiveBroadcastPanel: React.FC<LiveBroadcastPanelProps> = ({ matches,
     }
   };
 
+  const applyEnvironmentalElimination = async () => {
+    if (!session || !currentBroadcastMatch || !testVictimId) {
+      show('error', 'Select the player who was eliminated.');
+      return;
+    }
+    const victim = sessionPlayers.find((p) => p.id === testVictimId);
+    if (!victim) return;
+    if (!victim.is_alive) {
+      show('error', 'Player is already eliminated.');
+      return;
+    }
+    setLiveAction(true);
+    try {
+      const result = await applyLiveBroadcastEvent({
+        sessionId: session.id,
+        broadcastMatchId: currentBroadcastMatch.id,
+        eventType: 'elimination',
+        source: 'admin',
+        victimPlayerId: victim.id,
+        victimTeamId: victim.team_id || null,
+        killDelta: 0,
+        pointDelta: 0,
+        detectionConfidence: 1,
+        payload: { manual: true, cause: 'environment_or_unknown', phase: 'phase3-engine' },
+      });
+      setLastEventId(String(result?.event_id || ''));
+      setTestVictimId('');
+      await loadSession(session.id);
+      show('success', `${victim.player_name} eliminated without assigning a kill.`);
+    } catch (error: any) {
+      console.error('[MVP LIVE] environmental elimination error:', error);
+      show('error', error?.message || 'Failed to record elimination.');
+    } finally {
+      setLiveAction(false);
+    }
+  };
+
+  const revivePlayer = async () => {
+    if (!session || !currentBroadcastMatch || !testVictimId) {
+      show('error', 'Select a player to revive.');
+      return;
+    }
+    const victim = sessionPlayers.find((p) => p.id === testVictimId);
+    if (!victim) return;
+    if (victim.is_alive) {
+      show('info', 'Player is already alive.');
+      return;
+    }
+    setLiveAction(true);
+    try {
+      const result = await applyLiveBroadcastEvent({
+        sessionId: session.id,
+        broadcastMatchId: currentBroadcastMatch.id,
+        eventType: 'player_revive',
+        source: 'admin',
+        victimPlayerId: victim.id,
+        victimTeamId: victim.team_id || null,
+        payload: { manual: true, phase: 'phase3-engine' },
+      });
+      setLastEventId(String(result?.event_id || ''));
+      setTestVictimId('');
+      await loadSession(session.id);
+      show('success', `${victim.player_name} marked alive again.`);
+    } catch (error: any) {
+      console.error('[MVP LIVE] revivePlayer error:', error);
+      show('error', error?.message || 'Failed to revive player.');
+    } finally {
+      setLiveAction(false);
+    }
+  };
+
+  const applyPlacement = async () => {
+    if (!session || !currentBroadcastMatch || !selectedTeamId) {
+      show('error', 'Select a team first.');
+      return;
+    }
+    const team = sessionTeams.find((item) => item.id === selectedTeamId);
+    const position = Number(selectedPlacement);
+    const rule = rules.find((item) => item.type === 'placement' && item.enabled && item.placement_position === position);
+    if (!team || !rule) {
+      show('error', 'Selected placement does not have an enabled scoring rule.');
+      return;
+    }
+    setLiveAction(true);
+    try {
+      const result = await applyLiveBroadcastEvent({
+        sessionId: session.id,
+        broadcastMatchId: currentBroadcastMatch.id,
+        eventType: position === 1 ? 'winner' : 'placement',
+        source: 'admin',
+        killerTeamId: team.id,
+        pointDelta: Number(rule.points || 0),
+        placementPosition: position,
+        payload: { manual: true, phase: 'phase3-engine' },
+      });
+      setLastEventId(String(result?.event_id || ''));
+      await loadSession(session.id);
+      show('success', `${team.team_name} received +${rule.points} placement points for #${position}.`);
+    } catch (error: any) {
+      console.error('[MVP LIVE] applyPlacement error:', error);
+      show('error', error?.message || 'Failed to add placement points.');
+    } finally {
+      setLiveAction(false);
+    }
+  };
+
   const adjustTeamPoints = async (teamId: string, delta: number) => {
-    if (!session || !supabase || !teamId || !Number.isFinite(delta)) return;
+    if (!session || !teamId || !Number.isFinite(delta) || delta === 0) return;
     const team = sessionTeams.find((item) => item.id === teamId);
     if (!team) return;
     setLiveAction(true);
     try {
-      await addEvent({
-        event_type: 'points_adjustment',
+      const result = await applyLiveBroadcastEvent({
+        sessionId: session.id,
+        broadcastMatchId: currentBroadcastMatch.id,
+        eventType: 'points_adjustment',
         source: 'admin',
-        killer_team_id: team.id,
-        point_delta: delta,
-        event_payload: { manual: true, reason: 'Admin score correction' },
+        killerTeamId: team.id,
+        pointDelta: delta,
+        payload: { manual: true, reason: 'Admin score correction', phase: 'phase3-engine' },
       });
-      await supabase.from('live_broadcast_teams').update({
-        current_match_points: Math.max(0, Number(team.current_match_points || 0) + delta),
-        tournament_total_points: Math.max(0, Number(team.tournament_total_points || 0) + delta),
-      }).eq('id', team.id);
+      setLastEventId(String(result?.event_id || ''));
       await loadSession(session.id);
       show('success', `${team.team_name} points adjusted by ${delta >= 0 ? '+' : ''}${delta}.`);
     } catch (error: any) {
@@ -594,61 +731,57 @@ export const LiveBroadcastPanel: React.FC<LiveBroadcastPanelProps> = ({ matches,
     }
   };
 
-  const advanceMatch = async () => {
-    if (!session || !supabase) return;
-    const nextNumber = session.current_match_number + 1;
-    const nextMatch = broadcastMatches.find((item) => item.match_number === nextNumber);
-    if (!nextMatch) {
-      show('info', 'There is no next match configured in this broadcast session.');
+  const undoLastEvent = async () => {
+    if (!session) return;
+    const eventId = lastEventId || recentEvents[0]?.id;
+    if (!eventId) {
+      show('info', 'No reversible event is available.');
       return;
     }
-    const nextSource: any = selectableMatches.find((m: any) =>
-      String(m.id) === String(nextMatch.match_id) ||
-      String(m.id) === String(nextMatch.match_id).split('__map_')[0]
-    );
     setLiveAction(true);
     try {
-      if (currentBroadcastMatch) {
-        await supabase.from('live_broadcast_matches').update({
-          status: 'completed',
-          ended_at: new Date().toISOString(),
-        }).eq('id', currentBroadcastMatch.id);
-      }
-      await supabase.from('live_broadcast_matches').update({
-        status: 'live',
-        started_at: new Date().toISOString(),
-      }).eq('id', nextMatch.id);
-
-      await supabase.from('live_broadcast_sessions').update({
-        current_match_number: nextNumber,
-        current_match_id: String(nextMatch.match_id),
-        current_map: nextMatch.map || cleanName(nextSource?.map) || 'Erangel',
-        current_match_type: nextMatch.match_type || getMatchTypeLabel(nextSource),
-        current_squad_type: nextMatch.squad_type || getSquadTypeLabel(nextSource),
-        status: 'live',
-      }).eq('id', session.id);
-
-      // Reset ONLY the new current-match fields. Tournament totals remain intact.
-      // All player snapshots belong to the tournament session, so reset only
-      // current-match state while preserving cumulative tournament kills.
-      for (const player of players) {
-        await supabase.from('live_broadcast_players').update({
-          current_match_kills: 0,
-          is_alive: true,
-          tournament_match_count: Number((player as any).tournament_match_count || 0) + 1,
-        }).eq('id', player.id);
-      }
-      for (const team of sessionTeams) {
-        await supabase.from('live_broadcast_teams').update({
-          current_match_kills: 0,
-          current_match_points: 0,
-          current_alive_players: squadSize,
-          is_eliminated: false,
-        }).eq('id', team.id);
-      }
-
+      await reverseLiveBroadcastEvent(session.id, String(eventId));
+      setLastEventId('');
       await loadSession(session.id);
-      show('success', `MATCH ${nextNumber} is now live. Tournament totals were preserved.`);
+      show('success', 'Last live event was reversed successfully.');
+    } catch (error: any) {
+      console.error('[MVP LIVE] undoLastEvent error:', error);
+      show('error', error?.message || 'Could not reverse the event.');
+    } finally {
+      setLiveAction(false);
+    }
+  };
+
+  const saveCurrentMatchSnapshot = async () => {
+    if (!session) return;
+    setLiveAction(true);
+    try {
+      await snapshotLiveBroadcastMatch(session.id);
+      await loadSession(session.id);
+      show('success', `MATCH ${session.current_match_number} snapshot saved. Historical data remains preserved.`);
+    } catch (error: any) {
+      console.error('[MVP LIVE] snapshot error:', error);
+      show('error', error?.message || 'Failed to save match snapshot.');
+    } finally {
+      setLiveAction(false);
+    }
+  };
+
+  const advanceMatch = async () => {
+    if (!session) return;
+    if (session.current_match_number >= session.total_matches) {
+      show('info', 'This is the final configured match.');
+      return;
+    }
+    setLiveAction(true);
+    try {
+      await snapshotLiveBroadcastMatch(session.id);
+      await advanceLiveBroadcastMatch(session.id);
+      setLastEventId('');
+      setTestKillerId('');
+      setTestVictimId('');
+      await loadSession(session.id);
+      show('success', `MATCH ${session.current_match_number + 1} started. Tournament totals are preserved.`);
     } catch (error: any) {
       console.error('[MVP LIVE] advanceMatch error:', error);
       show('error', error?.message || 'Failed to advance to next match.');
@@ -794,7 +927,8 @@ export const LiveBroadcastPanel: React.FC<LiveBroadcastPanelProps> = ({ matches,
               <input type="checkbox" checked={rule.enabled} onChange={(e) => setRules((prev) => prev.map((item) => item.key === rule.key ? { ...item, enabled: e.target.checked } : item))} className="h-4 w-4 accent-cyan-400" />
             </div>
           ))}
-          <div className="rounded-xl border border-cyan-400/15 bg-cyan-400/5 p-2.5 text-[9px] leading-relaxed text-gray-400">The per-match scoring snapshot is stored with the broadcast match, so later rule edits do not rewrite old match history.</div>
+          <button type="button" onClick={saveScoringRules} disabled={savingRules || !session} className="w-full rounded-xl border border-fuchsia-400/30 bg-fuchsia-400/10 px-3 py-2.5 text-[9px] font-black uppercase text-fuchsia-300 disabled:opacity-30">{savingRules ? 'Saving…' : 'SAVE SCORING RULES'}</button>
+          <div className="rounded-xl border border-cyan-400/15 bg-cyan-400/5 p-2.5 text-[9px] leading-relaxed text-gray-400">The per-match scoring snapshot is stored with the broadcast match. Changing the active rules does not rewrite a completed match.</div>
         </div>
       </div>
 
@@ -839,8 +973,41 @@ export const LiveBroadcastPanel: React.FC<LiveBroadcastPanelProps> = ({ matches,
               <div><h4 className="text-xs font-black uppercase tracking-wider text-white">Kill Control / Test Input</h4><p className="mt-1 text-[9px] text-gray-500">Phase 2 manual engine. Automatic OCR attaches later.</p></div>
               <select value={testKillerId} onChange={(e) => setTestKillerId(e.target.value)} className="w-full rounded-xl border border-gray-700 bg-[#07192e] px-3 py-2.5 text-xs font-bold text-white"><option value="">Select killer</option>{sessionPlayers.map((player) => <option key={player.id} value={player.id}>{player.player_name}</option>)}</select>
               <select value={testVictimId} onChange={(e) => setTestVictimId(e.target.value)} className="w-full rounded-xl border border-gray-700 bg-[#07192e] px-3 py-2.5 text-xs font-bold text-white"><option value="">No victim / unknown</option>{sessionPlayers.map((player) => <option key={player.id} value={player.id}>{player.player_name}</option>)}</select>
-              <button type="button" onClick={applyKill} disabled={liveAction || !testKillerId} className="w-full rounded-xl bg-gradient-to-r from-fuchsia-500 to-cyan-400 px-3 py-3 text-[10px] font-black uppercase tracking-wider text-[#020710] disabled:cursor-not-allowed disabled:opacity-40">+ CONFIRMED KILL</button>
-              <div className="rounded-xl border border-amber-400/15 bg-amber-400/5 p-3 text-[9px] leading-relaxed text-gray-400"><span className="font-black text-amber-300">Rule:</span> This Phase 2 button represents a confirmed elimination. Knock/uncertain events must not be auto-counted as a kill.</div>
+              <button type="button" onClick={applyKill} disabled={liveAction || !testKillerId || !testVictimId} className="w-full rounded-xl bg-gradient-to-r from-fuchsia-500 to-cyan-400 px-3 py-3 text-[10px] font-black uppercase tracking-wider text-[#020710] disabled:cursor-not-allowed disabled:opacity-40">+ CONFIRMED KILL</button>
+              <div className="grid grid-cols-2 gap-2">
+                <button type="button" onClick={applyEnvironmentalElimination} disabled={liveAction || !testVictimId} className="rounded-xl border border-amber-400/30 bg-amber-400/10 px-2 py-2 text-[9px] font-black uppercase text-amber-300 disabled:opacity-30">ENV / NO KILL</button>
+                <button type="button" onClick={revivePlayer} disabled={liveAction || !testVictimId} className="rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-2 py-2 text-[9px] font-black uppercase text-emerald-300 disabled:opacity-30">REVIVE</button>
+              </div>
+              <button type="button" onClick={undoLastEvent} disabled={liveAction} className="w-full rounded-xl border border-red-400/25 bg-red-400/10 px-3 py-2.5 text-[9px] font-black uppercase text-red-300 disabled:opacity-30">↩ UNDO LAST EVENT</button>
+              <div className="rounded-xl border border-amber-400/15 bg-amber-400/5 p-3 text-[9px] leading-relaxed text-gray-400"><span className="font-black text-amber-300">Phase 3 rule:</span> Knock is not a kill. Environment/unknown elimination removes the player from alive count without awarding a killer. A confirmed kill requires both killer and victim.</div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+            <div className="rounded-2xl border border-gray-800 bg-[#030a16] p-4 space-y-3">
+              <div><h4 className="text-xs font-black uppercase tracking-wider text-amber-300">Placement / Winner Control</h4><p className="mt-1 text-[9px] text-gray-500">Apply the Admin-defined placement points without touching previous match history.</p></div>
+              <select value={selectedTeamId} onChange={(e) => setSelectedTeamId(e.target.value)} className="w-full rounded-xl border border-gray-700 bg-[#07192e] px-3 py-2.5 text-xs font-bold text-white">
+                <option value="">Select team</option>
+                {sessionTeams.map((team) => <option key={team.id} value={team.id}>{team.team_name}</option>)}
+              </select>
+              <select value={selectedPlacement} onChange={(e) => setSelectedPlacement(e.target.value)} className="w-full rounded-xl border border-gray-700 bg-[#07192e] px-3 py-2.5 text-xs font-bold text-white">
+                {rules.filter((rule) => rule.type === 'placement' && rule.enabled).map((rule) => <option key={rule.key} value={String(rule.placement_position)}>#{rule.placement_position} • +{rule.points} pts</option>)}
+              </select>
+              <div className="grid grid-cols-2 gap-2">
+                <button type="button" onClick={applyPlacement} disabled={liveAction || !selectedTeamId} className="rounded-xl bg-gradient-to-r from-amber-400 to-orange-500 px-3 py-2.5 text-[9px] font-black uppercase text-[#160b00] disabled:opacity-30">APPLY PLACEMENT</button>
+                <button type="button" onClick={saveCurrentMatchSnapshot} disabled={liveAction} className="rounded-xl border border-cyan-400/30 bg-cyan-400/10 px-3 py-2.5 text-[9px] font-black uppercase text-cyan-300 disabled:opacity-30">SAVE MATCH SNAPSHOT</button>
+              </div>
+            </div>
+            <div className="rounded-2xl border border-gray-800 bg-[#030a16] p-4">
+              <div className="flex items-center justify-between"><div><h4 className="text-xs font-black uppercase tracking-wider text-white">Recent Live Events</h4><p className="text-[9px] text-gray-500">Audit trail • newest first</p></div><span className="rounded-full border border-fuchsia-400/20 bg-fuchsia-400/10 px-2 py-1 text-[8px] font-black text-fuchsia-300">{recentEvents.length}</span></div>
+              <div className="mt-3 max-h-52 space-y-2 overflow-auto">
+                {recentEvents.length === 0 ? <div className="rounded-lg border border-gray-800 bg-[#07192e] p-3 text-[9px] text-gray-500">No live events yet.</div> : recentEvents.slice(0, 12).map((event: any) => (
+                  <div key={event.id} className="rounded-lg border border-gray-800 bg-[#07192e] p-2.5">
+                    <div className="flex items-center justify-between"><span className="text-[9px] font-black uppercase text-cyan-300">{String(event.event_type || '').replaceAll('_',' ')}</span><span className="text-[8px] text-gray-500">{event.source || 'system'}</span></div>
+                    <div className="mt-1 text-[9px] text-gray-300">Kill Δ {event.kill_delta ?? 0} • Point Δ {event.point_delta ?? 0}</div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
 
