@@ -259,9 +259,12 @@ export const LiveBroadcastPanel: React.FC<LiveBroadcastPanelProps> = ({ matches,
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
   const [liveAction, setLiveAction] = useState(false);
-  const [testKillerId, setTestKillerId] = useState('');
-  const [testVictimId, setTestVictimId] = useState('');
-  const [pointsAdjustment, setPointsAdjustment] = useState('0');
+const [testKillerId, setTestKillerId] = useState('');
+const [testVictimId, setTestVictimId] = useState('');
+const [pointsAdjustment, setPointsAdjustment] = useState('0');
+
+const killerSelectRef = useRef<HTMLSelectElement>(null);
+const victimSelectRef = useRef<HTMLSelectElement>(null);
   const [selectedTeamId, setSelectedTeamId] = useState('');
   const [selectedPlacement, setSelectedPlacement] = useState('1');
   const [lastEventId, setLastEventId] = useState('');
@@ -1107,64 +1110,128 @@ export const LiveBroadcastPanel: React.FC<LiveBroadcastPanelProps> = ({ matches,
   const getKillPoints = () => Number(rules.find((rule) => rule.type === 'kill' && rule.enabled)?.points || 0);
 
   const applyKill = async () => {
-    if (!session || !currentBroadcastMatch || !testKillerId) {
-      show('error', 'Select a killer player first.');
-      return;
+  if (!session || !currentBroadcastMatch) {
+    show('error', 'No active broadcast match is available.');
+    return;
+  }
+
+  // Read the current DOM values as a safety fallback.
+  // This prevents a stale React state from causing
+  // "Select a killer player first" after the admin already selected a player.
+  const killerId = String(
+    killerSelectRef.current?.value || testKillerId || ''
+  ).trim();
+
+  const victimId = String(
+    victimSelectRef.current?.value || testVictimId || ''
+  ).trim();
+
+  if (!killerId) {
+    show('error', 'Select a killer player first.');
+    return;
+  }
+
+  if (!victimId) {
+    show('error', 'Select the victim player.');
+    return;
+  }
+
+  const killer = sessionPlayers.find((p) => String(p.id) === killerId);
+  const victim = sessionPlayers.find((p) => String(p.id) === victimId);
+
+  if (!killer) {
+    show('error', 'Selected killer player was not found in the current broadcast roster.');
+    return;
+  }
+
+  if (!victim) {
+    show('error', 'Selected victim player was not found in the current broadcast roster.');
+    return;
+  }
+
+  // IMPORTANT:
+  // Same player as killer + victim is allowed by the requested system.
+  // It is treated as a self/same-team event:
+  // individual kill = +1
+  // team enemy kill/points = 0
+  const samePlayer = killer.id === victim.id;
+  const sameTeamKill = Boolean(
+    killer.team_id &&
+    victim.team_id &&
+    killer.team_id === victim.team_id
+  );
+
+  if (!victim.is_alive) {
+    show('error', 'That player is already eliminated. Duplicate kill blocked.');
+    return;
+  }
+
+  setLiveAction(true);
+
+  try {
+    const result = await applyLiveBroadcastEvent({
+      sessionId: session.id,
+      broadcastMatchId: currentBroadcastMatch.id,
+      eventType: 'kill',
+      source: 'admin',
+
+      killerPlayerId: killer.id,
+      victimPlayerId: victim.id,
+
+      killerTeamId: killer.team_id || null,
+      victimTeamId: victim.team_id || null,
+
+      // Every confirmed kill gives the selected killer one individual kill.
+      killDelta: 1,
+
+      // Enemy kill gets normal kill points.
+      // Same-team/self kill gets NO team points.
+      pointDelta: (samePlayer || sameTeamKill) ? 0 : getKillPoints(),
+
+      detectionConfidence: 1,
+
+      payload: {
+        manual: true,
+        confirmed: true,
+        same_player: samePlayer,
+        same_team: sameTeamKill,
+        phase: 'phase3-engine',
+        current_match_id: currentBroadcastMatch.match_id,
+      },
+    });
+
+    setLastEventId(String(result?.event_id || ''));
+
+    // The victim is now removed from active victim/killer lists
+    // through the refreshed live roster state.
+    setTestKillerId('');
+    setTestVictimId('');
+
+    if (killerSelectRef.current) {
+      killerSelectRef.current.value = '';
     }
 
-    const killer = sessionPlayers.find((p) => p.id === testKillerId);
-    const victim = testVictimId ? sessionPlayers.find((p) => p.id === testVictimId) : null;
-    if (!killer) {
-      show('error', 'Killer player was not found.');
-      return;
-    }
-    if (!victim) {
-      show('error', 'For a confirmed kill, select the eliminated player.');
-      return;
-    }
-    if (victim.id === killer.id) {
-      show('error', 'Killer and victim cannot be the same player.');
-      return;
-    }
-    if (!victim.is_alive) {
-      show('error', 'That player is already eliminated. Duplicate kill blocked.');
-      return;
+    if (victimSelectRef.current) {
+      victimSelectRef.current.value = '';
     }
 
-    const sameTeamKill = Boolean(killer.team_id && victim.team_id && killer.team_id === victim.team_id);
-    setLiveAction(true);
-    try {
-      const result = await applyLiveBroadcastEvent({
-        sessionId: session.id,
-        broadcastMatchId: currentBroadcastMatch.id,
-        eventType: 'kill',
-        source: 'admin',
-        killerPlayerId: killer.id,
-        victimPlayerId: victim.id,
-        killerTeamId: killer.team_id || null,
-        victimTeamId: victim.team_id || null,
-        killDelta: 1,
-        pointDelta: sameTeamKill ? 0 : getKillPoints(),
-        detectionConfidence: 1,
-        payload: { manual: true, confirmed: true, same_team: sameTeamKill, phase: 'phase3-engine' },
-      });
+    await loadSession(session.id);
 
-      setLastEventId(String(result?.event_id || ''));
-      setTestVictimId('');
-      await loadSession(session.id);
-      show(
-        'success',
-        sameTeamKill
+    show(
+      'success',
+      samePlayer
+        ? `${killer.player_name} +1 individual kill • self event • no team points.`
+        : sameTeamKill
           ? `${killer.player_name} +1 individual kill • same-team kill • no team points.`
           : `${killer.player_name} +1 kill • ${victim.player_name} eliminated.`
-      );
-    } catch (error: any) {
-      console.error('[MVP LIVE] applyKill error:', error);
-      show('error', error?.message || 'Failed to add live kill.');
-    } finally {
-      setLiveAction(false);
-    }
-  };
+    );
+  } catch (error: any) {
+    console.error('[MVP LIVE] applyKill error:', error);
+    show('error', error?.message || 'Failed to add live kill.');
+  } finally {
+    setLiveAction(false);
+  }
+};
 
   const applyEnvironmentalElimination = async () => {
     if (!session || !currentBroadcastMatch || !testVictimId) {
@@ -1689,7 +1756,18 @@ export const LiveBroadcastPanel: React.FC<LiveBroadcastPanelProps> = ({ matches,
                 <p className="mt-1 text-[9px] text-gray-500">Choose by Team → Player Number → Player Name. Eliminated players leave both active lists automatically.</p>
               </div>
 
-              <select value={testKillerId} onChange={(e) => setTestKillerId(e.target.value)} className="w-full rounded-xl border border-gray-700 bg-[#07192e] px-3 py-2.5 text-xs font-bold text-white">
+              <select
+  ref={killerSelectRef}
+  value={testKillerId}
+  onChange={(e) => {
+    const value = e.target.value;
+    setTestKillerId(value);
+    if (killerSelectRef.current) {
+      killerSelectRef.current.value = value;
+    }
+  }}
+  className="w-full rounded-xl border border-gray-700 bg-[#07192e] px-3 py-2.5 text-xs font-bold text-white"
+>
                 <option value="">Select killer</option>
                 {killerGroups.map((group) => (
                   <optgroup key={`killer-${group.team.id}`} label={`TEAM ${group.teamNumber} • ${group.displayName}`}>
@@ -1702,7 +1780,18 @@ export const LiveBroadcastPanel: React.FC<LiveBroadcastPanelProps> = ({ matches,
                 ))}
               </select>
 
-              <select value={testVictimId} onChange={(e) => setTestVictimId(e.target.value)} className="w-full rounded-xl border border-gray-700 bg-[#07192e] px-3 py-2.5 text-xs font-bold text-white">
+              <select
+  ref={victimSelectRef}
+  value={testVictimId}
+  onChange={(e) => {
+    const value = e.target.value;
+    setTestVictimId(value);
+    if (victimSelectRef.current) {
+      victimSelectRef.current.value = value;
+    }
+  }}
+  className="w-full rounded-xl border border-gray-700 bg-[#07192e] px-3 py-2.5 text-xs font-bold text-white"
+>
                 <option value="">Select victim</option>
                 {victimGroups.map((group) => (
                   <optgroup key={`victim-${group.team.id}`} label={`TEAM ${group.teamNumber} • ${group.displayName}`}>
