@@ -414,18 +414,17 @@ const matchData = await ensureBroadcastMatchRows(sessionData);
 // IMPORTANT:
 // Reconcile the real slot_bookings roster BEFORE reading
 // live_broadcast_teams and live_broadcast_players.
-const rosterSourceMatchId = sourceMatchIdFromBroadcastMatchId(
+const reconcileSourceMatchId = sourceMatchIdFromBroadcastMatchId(
   matchData[0]?.match_id || sessionData.current_match_id || ''
 );
 
-if (rosterSourceMatchId) {
+if (reconcileSourceMatchId) {
   await reconcileLiveBroadcastRoster(
     sessionId,
-    rosterSourceMatchId,
+    reconcileSourceMatchId,
     sessionData.current_squad_type || 'SQUAD'
   );
 }
-
 // Now read the updated roster AFTER reconciliation.
 const { data: freshTeams, error: freshTeamsError } = await supabase
   .from('live_broadcast_teams')
