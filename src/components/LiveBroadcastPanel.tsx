@@ -830,7 +830,9 @@ const victimSelectRef = useRef<HTMLSelectElement>(null);
     }
 
     const rosterMatch: any = targetMatches[0];
-    const rosterSourceMatchId = String(rosterMatch?.source_match_id || rosterMatch?.id || '');
+    const rosterSourceMatchId = sourceMatchIdFromBroadcastMatchId(
+  String(rosterMatch?.source_match_id || rosterMatch?.id || '')
+);
 
     const { data: bookingData, error: bookingError } = await supabase
       .from('slot_bookings')
@@ -983,7 +985,7 @@ const victimSelectRef = useRef<HTMLSelectElement>(null);
 
         if (teamError) throw teamError;
         team = createdTeam;
-        teamByKey.set(teamKey, team);
+       teamsByNumber.set(teamNumber, [team]);
       } else {
         const aliveCount = rows.reduce((count, row) => {
           const existing = (existingPlayers || []).find((player: any) =>
