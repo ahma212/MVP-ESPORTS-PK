@@ -1321,30 +1321,59 @@ setRecentEvents(eventResult.data || []);
   const sessionPlayers = players;
 
   const teamGroups = useMemo<TeamGroupView[]>(() => {
-    return [...sessionTeams]
-      .map((team) => {
-        const teamPlayers = sessionPlayers
-          .filter((player) => player.team_id === team.id)
-          .sort((a, b) => Number(a.player_number || 0) - Number(b.player_number || 0));
-        const firstPlayer = teamPlayers[0];
-        const fallbackTeamNumber = firstPlayer?.team_number || (sessionTeams.indexOf(team) + 1);
-        const teamNumber = parseTeamNumber(team.team_name, Number(fallbackTeamNumber || 1));
-        return {
-          team,
-          teamNumber,
-          displayName: cleanTeamDisplayName(team.team_name, teamNumber),
-          players: teamPlayers,
-          bookedCount: teamPlayers.length,
-        };
-      })
-      .sort((a, b) => {
-        const pointDiff = Number(b.team.tournament_total_points || 0) - Number(a.team.tournament_total_points || 0);
-        if (pointDiff !== 0) return pointDiff;
-        const killDiff = Number(b.team.tournament_total_kills || 0) - Number(a.team.tournament_total_kills || 0);
-        if (killDiff !== 0) return killDiff;
-        return a.teamNumber - b.teamNumber;
-      });
-  }, [sessionTeams, sessionPlayers]);
+  return [...sessionTeams]
+    .map((team) => {
+      const teamPlayers = sessionPlayers
+        .filter((player) => player.team_id === team.id)
+        .sort(
+          (a, b) =>
+            Number(a.player_number || 0) - Number(b.player_number || 0)
+        );
+
+      const firstPlayer = teamPlayers[0];
+      const fallbackTeamNumber =
+        firstPlayer?.team_number || (sessionTeams.indexOf(team) + 1);
+
+      const teamNumber = parseTeamNumber(
+        team.team_name,
+        Number(fallbackTeamNumber || 1)
+      );
+
+      // IMPORTANT:
+      // Always derive the displayed ALIVE count from the actual player state.
+      // This prevents a stale current_alive_players database counter from
+      // showing the wrong number after enemy/team/self kills.
+      const actualAlivePlayers = teamPlayers.filter(
+        (player) => player.is_alive
+      ).length;
+
+      return {
+        team: {
+          ...team,
+          current_alive_players: actualAlivePlayers,
+        },
+        teamNumber,
+        displayName: cleanTeamDisplayName(team.team_name, teamNumber),
+        players: teamPlayers,
+        bookedCount: teamPlayers.length,
+      };
+    })
+    .sort((a, b) => {
+      const pointDiff =
+        Number(b.team.tournament_total_points || 0) -
+        Number(a.team.tournament_total_points || 0);
+
+      if (pointDiff !== 0) return pointDiff;
+
+      const killDiff =
+        Number(b.team.tournament_total_kills || 0) -
+        Number(a.team.tournament_total_kills || 0);
+
+      if (killDiff !== 0) return killDiff;
+
+      return a.teamNumber - b.teamNumber;
+    });
+}, [sessionTeams, sessionPlayers]);
 
   const killerGroups = useMemo(
     () => teamGroups
