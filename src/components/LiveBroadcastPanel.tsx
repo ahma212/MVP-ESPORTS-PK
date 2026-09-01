@@ -386,7 +386,7 @@ const victimSelectRef = useRef<HTMLSelectElement>(null);
       bottom: Boolean(sessionData.bottom_bar_enabled),
     });
     const typedMatches = matchData;
-    const typedPlayers = (playerData || []) as BroadcastPlayerRow[];
+    const typedPlayers = (playerResult.data || []) as BroadcastPlayerRow[];
 
     // Rebuild Team Number + Player Number from the original slot_bookings roster.
     // We deliberately do this without adding columns to live_broadcast_players so
@@ -437,9 +437,9 @@ const victimSelectRef = useRef<HTMLSelectElement>(null);
     }
 
     setBroadcastMatches(typedMatches);
-    setTeams((teamData || []) as BroadcastTeamRow[]);
+    setTeams((teamResult.data || []) as BroadcastTeamRow[]);
     setPlayers(enrichedPlayers);
-    setRecentEvents(eventData || []);
+    setRecentEvents(eventResult.data || []);
   };
 
 
@@ -976,6 +976,25 @@ const victimSelectRef = useRef<HTMLSelectElement>(null);
         }
       }
     }
+  };
+
+  const startNewBroadcast = () => {
+    if (session && !['completed', 'cancelled'].includes(String(session.status).toLowerCase())) {
+      show('error', 'An existing broadcast is still active. Pause/resume it or delete it before creating a new broadcast.');
+      return;
+    }
+    setSession(null);
+    sessionRef.current = null;
+    setBroadcastMatches([]);
+    setTeams([]);
+    setPlayers([]);
+    setRecentEvents([]);
+    setTestKillerId('');
+    setTestVictimId('');
+    setLastEventId('');
+    setSelectedTournamentKey('');
+    setSelectedMatchId('');
+    setMessage(null);
   };
 
   const createSession = async () => {
@@ -1670,11 +1689,15 @@ const victimSelectRef = useRef<HTMLSelectElement>(null);
           )}
 
           <div className="flex flex-wrap gap-2">
-            {!session && (
-              <button type="button" onClick={createSession} disabled={loading || restoringExistingSession} className="rounded-xl bg-gradient-to-r from-cyan-400 to-blue-500 px-4 py-2.5 text-[10px] font-black uppercase tracking-wider text-[#03101d] shadow-lg disabled:cursor-not-allowed disabled:opacity-40">
-                {loading ? 'Creating…' : restoringExistingSession ? 'Checking…' : 'Create Broadcast Session'}
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={session ? startNewBroadcast : createSession}
+              disabled={loading || restoringExistingSession}
+              title={session && !['completed', 'cancelled'].includes(String(session.status).toLowerCase()) ? 'Delete or finish the current broadcast before creating a new one.' : 'Create a new broadcast session'}
+              className="rounded-xl bg-gradient-to-r from-cyan-400 to-blue-500 px-4 py-2.5 text-[10px] font-black uppercase tracking-wider text-[#03101d] shadow-lg disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {loading ? 'Creating…' : restoringExistingSession ? 'Checking…' : session ? 'NEW BROADCAST' : 'CREATE BROADCAST'}
+            </button>
 
             {session && ['paused', 'ready'].includes(String(session.status).toLowerCase()) && (
               <button type="button" onClick={resumeBroadcast} disabled={liveAction} className="rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-2.5 text-[10px] font-black uppercase text-emerald-300 disabled:opacity-40">
