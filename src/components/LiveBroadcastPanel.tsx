@@ -386,24 +386,71 @@ const victimSelectRef = useRef<HTMLSelectElement>(null);
   const loadSession = async (sessionId: string) => {
     if (!supabase || !sessionId) return;
     const sessionResult = await supabase.from('live_broadcast_sessions').select('*').eq('id', sessionId).maybeSingle();
-    const matchResult = await supabase.from('live_broadcast_matches').select('*').eq('session_id', sessionId).order('match_number', { ascending: true });
-    const teamResult = await supabase.from('live_broadcast_teams').select('*').eq('session_id', sessionId).order('rank', { ascending: true, nullsFirst: false });
-    const playerResult = await supabase.from('live_broadcast_players').select('*').eq('session_id', sessionId).order('player_name', { ascending: true });
-    const eventResult = await supabase.from('live_broadcast_events').select('*').eq('session_id', sessionId).order('created_at', { ascending: false }).limit(25);
+    const matchResult = await supabase
+  .from('live_broadcast_matches')
+  .select('*')
+  .eq('session_id', sessionId)
+  .order('match_number', { ascending: true });
 
-    if (sessionResult.error) throw sessionResult.error;
-    if (matchResult.error) throw matchResult.error;
-    if (teamResult.error) throw teamResult.error;
-    if (playerResult.error) throw playerResult.error;
-    if (eventResult.error) throw eventResult.error;
-    if (!sessionResult.data) throw new Error('Broadcast session was not found in Supabase.');
+const eventResult = await supabase
+  .from('live_broadcast_events')
+  .select('*')
+  .eq('session_id', sessionId)
+  .order('created_at', { ascending: false })
+  .limit(25);
 
-    const sessionData = sessionResult.data as BroadcastSessionRow;
-    let matchData = (matchResult.data || []) as BroadcastMatchRow[];
-    if (!matchData.length) {
-      matchData = await ensureBroadcastMatchRows(sessionData);
-    }
+if (sessionResult.error) throw sessionResult.error;
+if (matchResult.error) throw matchResult.error;
+if (eventResult.error) throw eventResult.error;
+if (!sessionResult.data) {
+  throw new Error('Broadcast session was not found in Supabase.');
+}
 
+const sessionData = sessionResult.data as BroadcastSessionRow;
+
+// First make sure the broadcast match rows exist.
+const matchData = await ensureBroadcastMatchRows(sessionData);
+
+// IMPORTANT:
+// Reconcile the real slot_bookings roster BEFORE reading
+// live_broadcast_teams and live_broadcast_players.
+const rosterSourceMatchId = sourceMatchIdFromBroadcastMatchId(
+  matchData[0]?.match_id || sessionData.current_match_id || ''
+);
+
+if (rosterSourceMatchId) {
+  await reconcileLiveBroadcastRoster(
+    sessionId,
+    rosterSourceMatchId,
+    sessionData.current_squad_type || 'SQUAD'
+  );
+}
+
+// Now read the updated roster AFTER reconciliation.
+const { data: freshTeams, error: freshTeamsError } = await supabase
+  .from('live_broadcast_teams')
+  .select('*')
+  .eq('session_id', sessionId)
+  .order('rank', { ascending: true, nullsFirst: false });
+
+const { data: freshPlayers, error: freshPlayersError } = await supabase
+  .from('live_broadcast_players')
+  .select('*')
+  .eq('session_id', sessionId)
+  .order('player_name', { ascending: true });
+
+if (freshTeamsError) throw freshTeamsError;
+if (freshPlayersError) throw freshPlayersError;
+
+const teamResult = {
+  data: freshTeams || [],
+  error: null,
+};
+
+const playerResult = {
+  data: freshPlayers || [],
+  error: null,
+};
     setSession(sessionData);
     setStreamUrl(sessionData.stream_url || '');
     setVisible({
