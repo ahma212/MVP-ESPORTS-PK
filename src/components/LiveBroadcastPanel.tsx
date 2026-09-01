@@ -845,7 +845,9 @@ const victimSelectRef = useRef<HTMLSelectElement>(null);
     if (!supabase || !targetMatches.length) return;
 
     const rosterMatch: any = targetMatches[0];
-    const rosterSourceMatchId = String(rosterMatch?.source_match_id || rosterMatch?.id || '');
+    const rosterSourceMatchId = sourceMatchIdFromBroadcastMatchId(
+  String(rosterMatch?.source_match_id || rosterMatch?.id || '')
+);
     const rosterSquadSize = normalizeSquadSize(getSquadTypeLabel(rosterMatch));
 
     // Build exactly one broadcast-match row per selected match.
