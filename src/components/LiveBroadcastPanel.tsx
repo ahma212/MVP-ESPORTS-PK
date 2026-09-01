@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { Match, UserProfile } from '../types';
 import { applyLiveBroadcastEvent, reverseLiveBroadcastEvent, advanceLiveBroadcastMatch, snapshotLiveBroadcastMatch } from '../lib/liveBroadcastEngine';
@@ -267,6 +267,9 @@ export const LiveBroadcastPanel: React.FC<LiveBroadcastPanelProps> = ({ matches,
   const [lastEventId, setLastEventId] = useState('');
   const [savingRules, setSavingRules] = useState(false);
   const [visible, setVisible] = useState({ scoreboard: false, top3: false, bottom: true });
+  const [restoringExistingSession, setRestoringExistingSession] = useState(false);
+  const [deletingSession, setDeletingSession] = useState(false);
+  const sessionRef = useRef<BroadcastSessionRow | null>(null);
 
   const activeTournament = useMemo(() => {
     return tournamentGroups.find((group) => group.key === selectedTournamentKey) || null;
@@ -316,7 +319,7 @@ export const LiveBroadcastPanel: React.FC<LiveBroadcastPanelProps> = ({ matches,
     if (rosterSourceMatchId && supabase) {
       const { data: rosterBookings, error: rosterError } = await supabase
         .from('slot_bookings')
-        .select('player_id,user_id,player_uid,player_ign,player_name,team_name,slot_number')
+        .select('player_id,user_id,player_uid,player_ign,team_name,slot_number')
         .eq('match_id', rosterSourceMatchId)
         .eq('status', 'confirmed')
         .order('slot_number', { ascending: true });
@@ -361,6 +364,254 @@ export const LiveBroadcastPanel: React.FC<LiveBroadcastPanelProps> = ({ matches,
     setPlayers(enrichedPlayers);
     setRecentEvents(eventData || []);
   };
+
+
+  // Keep a ref to the active broadcast so closing/navigating away from the Admin
+  // panel can pause the persisted Supabase session instead of deleting it.
+  useEffect(() => {
+    sessionRef.current = session;
+  }, [session]);
+
+  const pauseBroadcastOnDisconnect = async () => {
+    const active = sessionRef.current;
+    if (!active || !supabase || !isAdmin) return;
+    if (!['ready', 'live'].includes(String(active.status).toLowerCase())) return;
+
+    try {
+      const { error } = await supabase
+        .from('live_broadcast_sessions')
+        .update({ status: 'paused', updated_at: new Date().toISOString() })
+        .eq('id', active.id)
+        .in('status', ['ready', 'live']);
+
+      if (error) {
+        console.warn('[MVP LIVE] Could not persist PAUSED state on disconnect:', error);
+      }
+    } catch (error) {
+      console.warn('[MVP LIVE] Pause-on-disconnect failed:', error);
+    }
+  };
+
+  // A React unmount (Admin modal close/navigation) must not destroy the broadcast.
+  // Marking it paused makes the session resumable when the admin returns.
+  useEffect(() => {
+    if (!isAdmin) return;
+    return () => {
+      void pauseBroadcastOnDisconnect();
+    };
+  }, [isAdmin]);
+
+  useEffect(() => {
+    if (!isAdmin || !supabase) return;
+
+    const handleOffline = () => {
+      void pauseBroadcastOnDisconnect();
+    };
+
+    const handleOnline = () => {
+      // Realtime/session reload is handled by the existing effects below.
+      if (sessionRef.current?.id) void loadSession(sessionRef.current.id);
+    };
+
+    window.addEventListener('offline', handleOffline);
+    window.addEventListener('online', handleOnline);
+
+    return () => {
+      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('online', handleOnline);
+    };
+  }, [isAdmin]);
+
+  const resumeBroadcast = async () => {
+    if (!session || !supabase) return;
+    setLiveAction(true);
+    try {
+      const { data, error } = await supabase
+        .from('live_broadcast_sessions')
+        .update({
+          status: 'live',
+          overlay_enabled: true,
+          scoreboard_enabled: true,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', session.id)
+        .select('*')
+        .single();
+
+      if (error) throw error;
+      setSession(data as BroadcastSessionRow);
+      await loadSession(session.id);
+      show('success', 'Existing broadcast resumed from the saved state.');
+    } catch (error: any) {
+      console.error('[MVP LIVE] resumeBroadcast error:', error);
+      show('error', error?.message || 'Failed to resume broadcast.');
+    } finally {
+      setLiveAction(false);
+    }
+  };
+
+  const deleteBroadcast = async () => {
+    if (!session || !supabase) return;
+
+    const confirmed = window.confirm(
+      'DELETE this broadcast session?\n\nThis removes only the broadcast session data. Tournament matches, slot bookings, players, and wallet data will NOT be deleted.'
+    );
+    if (!confirmed) return;
+
+    setDeletingSession(true);
+    try {
+      const sessionId = session.id;
+
+      // Delete children explicitly so this remains safe even if the database
+      // foreign keys do not all use ON DELETE CASCADE.
+      const deleteSteps = [
+        'live_broadcast_events',
+        'live_broadcast_players',
+        'live_broadcast_teams',
+        'live_broadcast_scoring_rules',
+        'live_broadcast_matches',
+      ] as const;
+
+      for (const table of deleteSteps) {
+        const { error } = await supabase.from(table).delete().eq('session_id', sessionId);
+        if (error) throw new Error(`Failed to delete ${table}: ${error.message}`);
+      }
+
+      const { error: sessionDeleteError } = await supabase
+        .from('live_broadcast_sessions')
+        .delete()
+        .eq('id', sessionId);
+
+      if (sessionDeleteError) throw sessionDeleteError;
+
+      sessionRef.current = null;
+      setSession(null);
+      setBroadcastMatches([]);
+      setTeams([]);
+      setPlayers([]);
+      setRecentEvents([]);
+      setTestKillerId('');
+      setTestVictimId('');
+      setLastEventId('');
+      show('success', 'Broadcast session deleted. Tournament and booking data remain untouched.');
+    } catch (error: any) {
+      console.error('[MVP LIVE] deleteBroadcast error:', error);
+      show('error', error?.message || 'Failed to delete broadcast.');
+    } finally {
+      setDeletingSession(false);
+    }
+  };
+
+  const findAndRestoreExistingBroadcast = async () => {
+    if (!isAdmin || !supabase || restoringExistingSession || session) return;
+
+    const match: any = currentMatch;
+    if (!match) return;
+
+    setRestoringExistingSession(true);
+    try {
+      let existing: any = null;
+      let queryError: any = null;
+
+      if (broadcastType === 'tournament') {
+        const tournamentId = cleanName(
+          match?.tournament_id ||
+          match?.tournamentId ||
+          activeTournament?.source?.[0]?.tournament_id ||
+          activeTournament?.source?.[0]?.tournamentId
+        );
+
+        if (tournamentId) {
+          const result = await supabase
+            .from('live_broadcast_sessions')
+            .select('*')
+            .eq('tournament_id', tournamentId)
+            .in('status', ['ready', 'live', 'paused'])
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          existing = result.data;
+          queryError = result.error;
+        }
+
+        // Fallback for older tournament sessions whose tournament_id was not
+        // available when they were created.
+        if (!existing && !queryError) {
+          const result = await supabase
+            .from('live_broadcast_sessions')
+            .select('*')
+            .eq('current_match_id', String(match.id))
+            .in('status', ['ready', 'live', 'paused'])
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          existing = result.data;
+          queryError = result.error;
+        }
+      } else {
+        const sourceId = String(match.id);
+        const result = await supabase
+          .from('live_broadcast_sessions')
+          .select('*')
+          .eq('current_match_id', sourceId)
+          .is('tournament_id', null)
+          .in('status', ['ready', 'live', 'paused'])
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        existing = result.data;
+        queryError = result.error;
+      }
+
+      if (queryError) throw queryError;
+      if (!existing) return;
+
+      setSession(existing as BroadcastSessionRow);
+      setStreamUrl(existing.stream_url || '');
+
+      const sourceMatchId = sourceMatchIdFromBroadcastMatchId(
+        String(existing.current_match_id || match.id)
+      );
+
+      // Repair an older/incomplete roster when an existing broadcast is reopened.
+      await reconcileLiveBroadcastRoster(
+        existing.id,
+        sourceMatchId,
+        existing.current_squad_type || getSquadTypeLabel(match) || 'SQUAD'
+      );
+
+      await loadSession(existing.id);
+
+      show(
+        'info',
+        String(existing.status).toLowerCase() === 'paused'
+          ? 'Existing broadcast restored. Press START AGAIN / RESUME to continue.'
+          : 'Existing broadcast restored from Supabase.'
+      );
+    } catch (error: any) {
+      console.error('[MVP LIVE] restore existing broadcast error:', error);
+      show('error', error?.message || 'Could not restore an existing broadcast.');
+    } finally {
+      setRestoringExistingSession(false);
+    }
+  };
+
+  // Every time the Admin returns to the Live Broadcast tab, first look for a
+  // non-completed broadcast for the selected tournament/match.
+  useEffect(() => {
+    if (!isAdmin || session || !currentMatch) return;
+    void findAndRestoreExistingBroadcast();
+  }, [
+    isAdmin,
+    session?.id,
+    broadcastType,
+    selectedTournamentKey,
+    selectedMatchId,
+    currentMatch?.id,
+  ]);
 
   useEffect(() => {
     if (!isAdmin || !supabase || !session?.id) return;
@@ -476,7 +727,7 @@ export const LiveBroadcastPanel: React.FC<LiveBroadcastPanelProps> = ({ matches,
         player_number: identity.playerNumber,
         slot_number: identity.slotNumber,
         player_uid: cleanName(booking.player_uid) || null,
-        player_name: cleanName(booking.player_ign) || cleanName(booking.player_name) || `Player ${bookingIndex + 1}`,
+        player_name: cleanName(booking.player_ign) || `Player ${bookingIndex + 1}`,
         profile_id: booking.player_id || booking.user_id || null,
         current_match_kills: 0,
         is_alive: true,
@@ -532,7 +783,7 @@ export const LiveBroadcastPanel: React.FC<LiveBroadcastPanelProps> = ({ matches,
 
     const { data: bookings, error } = await supabase
       .from('slot_bookings')
-      .select('id,match_id,slot_number,team_name,player_ign,player_name,player_uid,player_id,user_id')
+      .select('id,match_id,slot_number,team_name,player_ign,player_uid,player_id,user_id')
       .eq('match_id', sourceMatchId)
       .eq('status', 'confirmed')
       .order('slot_number', { ascending: true });
@@ -593,21 +844,23 @@ export const LiveBroadcastPanel: React.FC<LiveBroadcastPanelProps> = ({ matches,
         team = createdTeam;
         teamByKey.set(teamKey, team);
       } else {
-        const aliveCount = rows.reduce((count) => {
+        const aliveCount = rows.reduce((count, row) => {
           const existing = (existingPlayers || []).find((player: any) =>
             player.team_id === team.id &&
             (
-              (player.player_uid && cleanName(player.player_uid) === cleanName(rows[count]?.booking?.player_uid)) ||
-              (player.player_name && sameText(player.player_name, rows[count]?.booking?.player_ign))
+              (row.booking?.player_uid && player.player_uid && sameText(player.player_uid, row.booking.player_uid)) ||
+              (row.booking?.player_id && player.profile_id && String(player.profile_id) === String(row.booking.player_id)) ||
+              sameText(player.player_name, row.booking?.player_ign)
             )
           );
-          return count + (existing?.is_alive !== false ? 1 : 0);
+          return count + (existing?.is_alive === false ? 0 : 1);
         }, 0);
 
-        if (Number(team.current_alive_players) < rows.length && Number.isFinite(aliveCount)) {
+        const normalizedAliveCount = Math.max(0, Math.min(rows.length, aliveCount));
+        if (Number(team.current_alive_players) !== normalizedAliveCount && Number.isFinite(normalizedAliveCount)) {
           await supabase
             .from('live_broadcast_teams')
-            .update({ current_alive_players: rows.length, updated_at: new Date().toISOString() })
+            .update({ current_alive_players: normalizedAliveCount, updated_at: new Date().toISOString() })
             .eq('id', team.id);
         }
       }
@@ -1158,11 +1411,9 @@ export const LiveBroadcastPanel: React.FC<LiveBroadcastPanelProps> = ({ matches,
               <select value={broadcastType} onChange={(e) => {
                 const nextType = e.target.value as 'tournament' | 'single';
                 setBroadcastType(nextType);
-                setSession(null);
-                setBroadcastMatches([]);
-                setTeams([]);
-                setPlayers([]);
                 setSelectedMapIndex(0);
+                // The next selection effect will restore an existing persisted
+                // broadcast instead of forcing the admin to create a new one.
                 if (nextType === 'tournament') {
                   const first = tournamentGroups[0];
                   setSelectedTournamentKey(first?.key || '');
@@ -1261,11 +1512,49 @@ export const LiveBroadcastPanel: React.FC<LiveBroadcastPanelProps> = ({ matches,
             <input value={streamUrl} onChange={(e) => setStreamUrl(e.target.value)} placeholder="https://youtube.com/live/..." className="w-full rounded-xl border border-gray-700 bg-[#07192e] px-3 py-2.5 text-xs text-white outline-none focus:border-cyan-400" />
           </div>
 
+          {restoringExistingSession && (
+            <div className="rounded-xl border border-cyan-400/20 bg-cyan-400/5 px-3 py-2 text-[9px] font-black uppercase tracking-wider text-cyan-300">
+              RESTORING EXISTING BROADCAST FROM SUPABASE…
+            </div>
+          )}
+
+          {session && (
+            <div className="rounded-xl border border-fuchsia-400/20 bg-fuchsia-500/5 px-3 py-2 text-[9px] text-gray-300">
+              <span className="font-black text-fuchsia-300">PERSISTENT SESSION:</span>{' '}
+              Closing the Admin panel does not delete this broadcast. It is saved in Supabase and can be resumed later.
+            </div>
+          )}
+
           <div className="flex flex-wrap gap-2">
-            <button type="button" onClick={createSession} disabled={loading || Boolean(session)} className="rounded-xl bg-gradient-to-r from-cyan-400 to-blue-500 px-4 py-2.5 text-[10px] font-black uppercase tracking-wider text-[#03101d] shadow-lg disabled:cursor-not-allowed disabled:opacity-40">{loading ? 'Creating…' : session ? 'Session Created' : 'Create Broadcast Session'}</button>
-            {session && <button type="button" onClick={() => updateSession({ status: 'live', overlay_enabled: true, scoreboard_enabled: true })} disabled={liveAction} className="rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-2.5 text-[10px] font-black uppercase text-emerald-300 disabled:opacity-40">GO LIVE</button>}
-            {session && <button type="button" onClick={() => updateSession({ status: 'paused' })} disabled={liveAction} className="rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-2.5 text-[10px] font-black uppercase text-amber-300 disabled:opacity-40">PAUSE</button>}
-            {session && <button type="button" onClick={() => updateSession({ status: 'completed', overlay_enabled: false })} disabled={liveAction} className="rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-2.5 text-[10px] font-black uppercase text-red-300 disabled:opacity-40">END BROADCAST</button>}
+            {!session && (
+              <button type="button" onClick={createSession} disabled={loading || restoringExistingSession} className="rounded-xl bg-gradient-to-r from-cyan-400 to-blue-500 px-4 py-2.5 text-[10px] font-black uppercase tracking-wider text-[#03101d] shadow-lg disabled:cursor-not-allowed disabled:opacity-40">
+                {loading ? 'Creating…' : restoringExistingSession ? 'Checking…' : 'Create Broadcast Session'}
+              </button>
+            )}
+
+            {session && ['paused', 'ready'].includes(String(session.status).toLowerCase()) && (
+              <button type="button" onClick={resumeBroadcast} disabled={liveAction} className="rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-2.5 text-[10px] font-black uppercase text-emerald-300 disabled:opacity-40">
+                START AGAIN / RESUME
+              </button>
+            )}
+
+            {session && String(session.status).toLowerCase() === 'live' && (
+              <button type="button" onClick={() => updateSession({ status: 'paused' })} disabled={liveAction} className="rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-2.5 text-[10px] font-black uppercase text-amber-300 disabled:opacity-40">
+                PAUSE
+              </button>
+            )}
+
+            {session && (
+              <button type="button" onClick={deleteBroadcast} disabled={deletingSession || liveAction} className="rounded-xl border border-red-400/30 bg-red-500/10 px-4 py-2.5 text-[10px] font-black uppercase text-red-300 disabled:opacity-40">
+                {deletingSession ? 'DELETING…' : 'DELETE BROADCAST'}
+              </button>
+            )}
+
+            {session && (
+              <button type="button" onClick={() => updateSession({ status: 'completed', overlay_enabled: false })} disabled={liveAction} className="rounded-xl border border-gray-700 bg-gray-800/70 px-4 py-2.5 text-[10px] font-black uppercase text-gray-300 disabled:opacity-40">
+                END BROADCAST
+              </button>
+            )}
           </div>
         </div>
 
@@ -1296,6 +1585,21 @@ export const LiveBroadcastPanel: React.FC<LiveBroadcastPanelProps> = ({ matches,
               </div>
             </div>
           </div>
+
+          {['paused', 'ready'].includes(String(session.status).toLowerCase()) && (
+            <div className="rounded-2xl border border-amber-400/25 bg-amber-500/5 p-4">
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <div className="text-[9px] font-black uppercase tracking-[0.18em] text-amber-300">BROADCAST SAVED</div>
+                  <div className="mt-1 text-lg font-black text-white">Session {session.id.slice(0, 8)}… is {String(session.status).toUpperCase()}</div>
+                  <div className="mt-1 text-[9px] text-gray-400">All team/player scores and the current match state remain stored in Supabase.</div>
+                </div>
+                <button type="button" onClick={resumeBroadcast} disabled={liveAction} className="rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-2.5 text-[10px] font-black uppercase text-emerald-300 disabled:opacity-40">
+                  START AGAIN / RESUME
+                </button>
+              </div>
+            </div>
+          )}
 
           <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
             <div className="xl:col-span-2 rounded-2xl border border-gray-800 bg-[#030a16] p-4">
