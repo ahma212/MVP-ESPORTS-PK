@@ -35,6 +35,7 @@ type BroadcastMatchRow = {
 
 type BroadcastTeamRow = {
   id: string;
+  created_at?: string | null;
   session_id: string;
   broadcast_match_id?: string | null;
   team_key: string;
@@ -51,6 +52,7 @@ type BroadcastTeamRow = {
 
 type BroadcastPlayerRow = {
   id: string;
+  created_at?: string | null;
   session_id: string;
   broadcast_match_id?: string | null;
   team_id?: string | null;
@@ -119,10 +121,36 @@ const getMatchTypeLabel = (match: any) => cleanName(match?.type || match?.match_
 const getSquadTypeLabel = (match: any) => cleanName(match?.squad_type || '').toUpperCase();
 
 const teamKeyFromBooking = (booking: any, fallbackIndex: number, squadSize: number) => {
-  const explicit = cleanName(booking?.team_name);
-  if (explicit) return explicit;
-  const slot = Number(booking?.slot_number || fallbackIndex + 1);
-  return `TEAM #${Math.ceil(slot / Math.max(1, squadSize))}`;
+  // TEAM NUMBER is the stable identity. Team name is display data only.
+  const identity = getTeamAndPlayerNumber(booking, fallbackIndex, squadSize);
+  return `team-${identity.teamNumber}`;
+};
+
+const getCanonicalTeamKey = (teamNumber: number) => `team-${Math.max(1, Number(teamNumber) || 1)}`;
+
+const getStoredTeamNumber = (team: any, fallback: number) => {
+  const key = cleanName(team?.team_key);
+  const keyMatch = key.match(/(?:^|\D)team[-_ ]?(\d+)(?:\D|$)/i);
+  if (keyMatch) return Number(keyMatch[1]);
+  return parseTeamNumber(team?.team_name, fallback);
+};
+
+const chooseCanonicalTeam = (teams: any[], teamNumber: number, fallbackIndex: number) => {
+  const candidates = (teams || []).filter((team: any, index: number) =>
+    getStoredTeamNumber(team, index + 1) === teamNumber
+  );
+  if (!candidates.length) return null;
+  return [...candidates].sort((a: any, b: any) => {
+    const aKey = cleanName(a?.team_key);
+    const bKey = cleanName(b?.team_key);
+    const canonicalKey = getCanonicalTeamKey(teamNumber);
+    if (aKey === canonicalKey && bKey !== canonicalKey) return -1;
+    if (bKey === canonicalKey && aKey !== canonicalKey) return 1;
+    const aScore = Number(a?.tournament_total_points || 0) * 1000000 + Number(a?.tournament_total_kills || 0) * 1000 + Number(a?.current_match_kills || 0);
+    const bScore = Number(b?.tournament_total_points || 0) * 1000000 + Number(b?.tournament_total_kills || 0) * 1000 + Number(b?.current_match_kills || 0);
+    if (aScore !== bScore) return bScore - aScore;
+    return String(a?.created_at || '').localeCompare(String(b?.created_at || ''));
+  })[0];
 };
 
 const getTeamAndPlayerNumber = (booking: any, fallbackIndex: number, squadSize: number) => {
@@ -170,12 +198,10 @@ const cleanTeamDisplayName = (teamName: unknown, teamNumber: number) => {
   return raw;
 };
 
-const getPlayerOptionLabel = (player: BroadcastPlayerRow, team?: BroadcastTeamRow | null) => {
-  const teamNumber = Number(player.team_number || 0);
+const getPlayerOptionLabel = (player: BroadcastPlayerRow) => {
   const playerNumber = Number(player.player_number || 0);
-  const tn = teamNumber > 0 ? `TEAM ${teamNumber}` : cleanName(team?.team_name || 'TEAM');
   const pn = playerNumber > 0 ? `PLAYER ${playerNumber}` : 'PLAYER';
-  return `${tn} • ${pn} • ${cleanName(player.player_name)}`;
+  return `${pn} • ${cleanName(player.player_name)}`;
 };
 
 type TeamGroupView = {
@@ -386,58 +412,119 @@ const victimSelectRef = useRef<HTMLSelectElement>(null);
       bottom: Boolean(sessionData.bottom_bar_enabled),
     });
     const typedMatches = matchData;
+    const rawTeams = (teamResult.data || []) as BroadcastTeamRow[];
     const typedPlayers = (playerResult.data || []) as BroadcastPlayerRow[];
 
-    // Rebuild Team Number + Player Number from the original slot_bookings roster.
-    // We deliberately do this without adding columns to live_broadcast_players so
-    // the existing Phase 3 database schema remains untouched.
-    let enrichedPlayers = typedPlayers;
-    const rosterSourceMatchId = sourceMatchIdFromBroadcastMatchId(typedMatches[0]?.match_id || sessionData?.current_match_id);
+    // Rebuild Team Number + Player Number from confirmed slot_bookings.
+    // Team number is the stable identity; duplicate legacy broadcast rows are
+    // collapsed in memory so the Admin UI never shows duplicate teams/players.
+    const rosterSourceMatchId = sourceMatchIdFromBroadcastMatchId(
+      typedMatches[0]?.match_id || sessionData?.current_match_id
+    );
+    const rosterSquadSize = normalizeSquadSize(getSquadTypeLabel(sessionData));
+    let rosterBookings: any[] = [];
+
     if (rosterSourceMatchId && supabase) {
-      const { data: rosterBookings, error: rosterError } = await supabase
+      const { data, error: rosterError } = await supabase
         .from('slot_bookings')
         .select('player_id,user_id,player_uid,player_ign,team_name,slot_number')
         .eq('match_id', rosterSourceMatchId)
         .eq('status', 'confirmed')
         .order('slot_number', { ascending: true });
-
-      if (!rosterError && rosterBookings) {
-        const rosterMap = rosterBookings.map((booking: any, index: number) => ({
-          booking,
-          identity: getTeamAndPlayerNumber(
-            booking,
-            index,
-            (() => {
-              const type = getSquadTypeLabel(sessionData);
-              if (type === 'DUO') return 2;
-              if (type === 'SOLO') return 1;
-              return 4;
-            })()
-          ),
-        }));
-
-        enrichedPlayers = typedPlayers.map((player) => {
-          const match = rosterMap.find(({ booking }) =>
-            (player.profile_id && sameText(player.profile_id, booking.player_id)) ||
-            (player.profile_id && sameText(player.profile_id, booking.user_id)) ||
-            (player.player_uid && sameText(player.player_uid, booking.player_uid)) ||
-            (player.player_name && sameText(player.player_name, booking.player_ign))
-          );
-
-          if (!match) return player;
-
-          return {
-            ...player,
-            team_number: match.identity.teamNumber,
-            player_number: match.identity.playerNumber,
-            slot_number: match.identity.slotNumber,
-          };
-        });
-      }
+      if (!rosterError && data) rosterBookings = data;
     }
 
+    const bookingRows = rosterBookings.map((booking, index) => ({
+      booking,
+      identity: getTeamAndPlayerNumber(booking, index, rosterSquadSize),
+    }));
+
+    const teamNumberByTeamId = new Map<string, number>();
+    const teamRowsByNumber = new Map<number, BroadcastTeamRow[]>();
+
+    rawTeams.forEach((team, index) => {
+      const relatedBooking = bookingRows.find((row) =>
+        sameText(row.booking?.team_name, team.team_name)
+      );
+      const number = relatedBooking?.identity.teamNumber || getStoredTeamNumber(team, index + 1);
+      teamNumberByTeamId.set(String(team.id), number);
+      const list = teamRowsByNumber.get(number) || [];
+      list.push(team);
+      teamRowsByNumber.set(number, list);
+    });
+
+    // Add any booked team whose team row was not yet present.
+    bookingRows.forEach((row) => {
+      if (!teamRowsByNumber.has(row.identity.teamNumber)) teamRowsByNumber.set(row.identity.teamNumber, []);
+    });
+
+    const canonicalTeams = Array.from(teamRowsByNumber.entries())
+      .map(([teamNumber, candidates]) => {
+        const chosen = chooseCanonicalTeam(candidates, teamNumber, teamNumber - 1);
+        if (chosen) teamNumberByTeamId.set(String(chosen.id), teamNumber);
+        return chosen;
+      })
+      .filter(Boolean) as BroadcastTeamRow[];
+
+    const canonicalTeamIdByNumber = new Map<number, string>();
+    canonicalTeams.forEach((team) => {
+      const relatedBooking = bookingRows.find((row) => sameText(row.booking?.team_name, team.team_name));
+      const teamNumber = relatedBooking?.identity.teamNumber || getStoredTeamNumber(team, canonicalTeams.indexOf(team) + 1);
+      canonicalTeamIdByNumber.set(teamNumber, String(team.id));
+      teamNumberByTeamId.set(String(team.id), teamNumber);
+    });
+
+    const findPlayerCandidates = (booking: any) => typedPlayers.filter((player) =>
+      (booking.player_uid && player.player_uid && sameText(player.player_uid, booking.player_uid)) ||
+      ((booking.player_id || booking.user_id) && player.profile_id &&
+        (sameText(player.profile_id, booking.player_id) || sameText(player.profile_id, booking.user_id))) ||
+      (booking.player_ign && player.player_name && sameText(player.player_name, booking.player_ign))
+    );
+
+    const usedPlayerIds = new Set<string>();
+    const enrichedPlayers: BroadcastPlayerRow[] = [];
+
+    for (const row of bookingRows) {
+      const candidates = findPlayerCandidates(row.booking)
+        .filter((candidate) => !usedPlayerIds.has(String(candidate.id)))
+        .sort((a, b) => {
+          const expectedTeamId = canonicalTeamIdByNumber.get(row.identity.teamNumber);
+          if (String(a.team_id || '') === String(expectedTeamId || '') && String(b.team_id || '') !== String(expectedTeamId || '')) return -1;
+          if (String(b.team_id || '') === String(expectedTeamId || '') && String(a.team_id || '') !== String(expectedTeamId || '')) return 1;
+          const aScore = Number(a.tournament_kills || 0) * 1000 + Number(a.current_match_kills || 0);
+          const bScore = Number(b.tournament_kills || 0) * 1000 + Number(b.current_match_kills || 0);
+          if (aScore !== bScore) return bScore - aScore;
+          return String(a.created_at || '').localeCompare(String(b.created_at || ''));
+        });
+
+      const player = candidates[0];
+      if (!player) continue;
+      usedPlayerIds.add(String(player.id));
+      enrichedPlayers.push({
+        ...player,
+        team_id: player.team_id || canonicalTeamIdByNumber.get(row.identity.teamNumber) || null,
+        team_number: row.identity.teamNumber,
+        player_number: row.identity.playerNumber,
+        slot_number: row.identity.slotNumber,
+      });
+    }
+
+    // Backward-compatible fallback for any legacy player that cannot be mapped to a booking.
+    typedPlayers.forEach((player) => {
+      if (usedPlayerIds.has(String(player.id))) return;
+      const teamNumber = teamNumberByTeamId.get(String(player.team_id || ''));
+      if (!teamNumber) return;
+      const sameTeamPlayers = enrichedPlayers.filter((item) => item.team_number === teamNumber);
+      enrichedPlayers.push({
+        ...player,
+        team_number: teamNumber,
+        player_number: sameTeamPlayers.length + 1,
+      });
+      usedPlayerIds.add(String(player.id));
+    });
+
     setBroadcastMatches(typedMatches);
-    setTeams((teamResult.data || []) as BroadcastTeamRow[]);
+    setTeams(canonicalTeams);
     setPlayers(enrichedPlayers);
     setRecentEvents(eventResult.data || []);
   };
@@ -756,17 +843,15 @@ const victimSelectRef = useRef<HTMLSelectElement>(null);
 
   const buildSessionTeamsAndPlayers = async (newSessionId: string, targetMatches: Match[]) => {
     if (!supabase || !targetMatches.length) return;
-    const uniqueTeamMap = new Map<string, { name: string; logo: string; teamNumber: number }>();
-    const playerRows: Array<any> = [];
-    const matchRows: Array<any> = [];
 
-    // Create one live-match record for every selected tournament match.
-    // Player/team snapshots are intentionally loaded from the first match only
-    // so the same tournament roster carries forward across Match 1 -> Match 2 -> ...
-    for (let matchIndex = 0; matchIndex < targetMatches.length; matchIndex += 1) {
-      const match: any = targetMatches[matchIndex];
+    const rosterMatch: any = targetMatches[0];
+    const rosterSourceMatchId = String(rosterMatch?.source_match_id || rosterMatch?.id || '');
+    const rosterSquadSize = normalizeSquadSize(getSquadTypeLabel(rosterMatch));
+
+    // Build exactly one broadcast-match row per selected match.
+    const matchRows: Array<any> = targetMatches.map((match: any, matchIndex: number) => {
       const maps = getMatchMaps(match);
-      matchRows.push({
+      return {
         session_id: newSessionId,
         match_id: String(match.id),
         match_number: matchIndex + 1,
@@ -776,84 +861,93 @@ const victimSelectRef = useRef<HTMLSelectElement>(null);
         status: matchIndex === 0 ? 'live' : 'pending',
         started_at: matchIndex === 0 ? new Date().toISOString() : null,
         scoring_snapshot: rules,
-      });
-    }
+      };
+    });
 
-    const rosterMatch: any = targetMatches[0];
-    const rosterSourceMatchId = String(rosterMatch?.source_match_id || rosterMatch?.id || '');
-
-    const { data: bookingData, error: bookingError } = await supabase
+    const { error: bookingError, data: bookingData } = await supabase
       .from('slot_bookings')
-      .select('*')
+      .select('id,match_id,slot_number,team_name,player_ign,player_uid,player_id,user_id')
       .eq('match_id', rosterSourceMatchId)
       .eq('status', 'confirmed')
       .order('slot_number', { ascending: true });
     if (bookingError) throw bookingError;
 
+    const uniqueTeamMap = new Map<number, { name: string; logo: string }>();
+    const playerRows: Array<any> = [];
+
     (bookingData || []).forEach((booking: any, bookingIndex: number) => {
-      const identity = getTeamAndPlayerNumber(booking, bookingIndex, squadSize);
-      const rawTeamName = cleanName(booking?.team_name);
+      const identity = getTeamAndPlayerNumber(booking, bookingIndex, rosterSquadSize);
       const teamNumber = identity.teamNumber;
-      const teamName = rawTeamName || `TEAM ${teamNumber}`;
-      const teamKey = rawTeamName.toLowerCase() || `team-${teamNumber}`;
-      if (!uniqueTeamMap.has(teamKey)) {
-        uniqueTeamMap.set(teamKey, { name: teamName, logo: logoCandidates(booking), teamNumber });
+      const teamName = cleanName(booking?.team_name) || `TEAM ${teamNumber}`;
+      if (!uniqueTeamMap.has(teamNumber)) {
+        uniqueTeamMap.set(teamNumber, {
+          name: teamName,
+          logo: logoCandidates(booking),
+        });
       }
       playerRows.push({
         session_id: newSessionId,
-        match_id: String(rosterMatch.id),
-        team_key: teamKey,
-        team_number: identity.teamNumber,
+        team_number: teamNumber,
         player_number: identity.playerNumber,
         slot_number: identity.slotNumber,
         player_uid: cleanName(booking.player_uid) || null,
         player_name: cleanName(booking.player_ign) || `Player ${bookingIndex + 1}`,
         profile_id: booking.player_id || booking.user_id || null,
-        current_match_kills: 0,
-        is_alive: true,
-        tournament_kills: 0,
       });
     });
 
-    const { data: createdMatches, error: matchInsertError } = await supabase.from('live_broadcast_matches').insert(matchRows).select('*');
+    const { data: createdMatches, error: matchInsertError } = await supabase
+      .from('live_broadcast_matches')
+      .insert(matchRows)
+      .select('*');
     if (matchInsertError) throw matchInsertError;
+
     const firstCreated = (createdMatches || [])[0] as BroadcastMatchRow | undefined;
 
-    const teamInsertRows = Array.from(uniqueTeamMap.entries()).map(([teamKey, value]) => ({
+    const teamInsertRows = Array.from(uniqueTeamMap.entries()).map(([teamNumber, value]) => ({
       session_id: newSessionId,
       broadcast_match_id: null,
-      team_key: teamKey,
+      team_key: getCanonicalTeamKey(teamNumber),
       team_name: value.name,
       team_logo_url: value.logo || null,
       current_match_kills: 0,
       current_match_points: 0,
-      current_alive_players: playerRows.filter((row) => row.team_key === teamKey).length,
+      current_alive_players: playerRows.filter((row) => row.team_number === teamNumber).length,
       tournament_total_kills: 0,
       tournament_total_points: 0,
       is_eliminated: false,
     }));
 
-    const { data: createdTeams, error: teamInsertError } = await supabase.from('live_broadcast_teams').insert(teamInsertRows).select('*');
+    const { data: createdTeams, error: teamInsertError } = await supabase
+      .from('live_broadcast_teams')
+      .insert(teamInsertRows)
+      .select('*');
     if (teamInsertError) throw teamInsertError;
 
-    const createdTeamMap = new Map<string, any>((createdTeams || []).map((row: any) => [String(row.team_key), row]));
-    // Do not send team_number/player_number to Supabase here: the existing
-    // live_broadcast_players table does not contain those columns. The identity
-    // is reconstructed from slot_bookings whenever this session is loaded.
+    const createdTeamMap = new Map<number, any>(
+      (createdTeams || []).map((row: any, index: number) => [
+        Number((teamInsertRows[index] as any)?.team_key?.replace('team-', '')),
+        row,
+      ])
+    );
+
     const playerInsertRows = playerRows.map((row) => ({
       session_id: newSessionId,
-      broadcast_match_id: null,
-      team_id: createdTeamMap.get(row.team_key)?.id || null,
+      broadcast_match_id: firstCreated?.id || null,
+      team_id: createdTeamMap.get(Number(row.team_number))?.id || null,
       profile_id: row.profile_id,
       player_uid: row.player_uid,
       player_name: row.player_name,
       current_match_kills: 0,
       is_alive: true,
+      is_knocked: false,
       tournament_kills: 0,
     }));
 
     if (playerInsertRows.length) {
-      const { error: playerInsertError } = await supabase.from('live_broadcast_players').insert(playerInsertRows);
+      const { error: playerInsertError } = await supabase
+        .from('live_broadcast_players')
+        .insert(playerInsertRows);
       if (playerInsertError) throw playerInsertError;
     }
   };
@@ -867,49 +961,47 @@ const victimSelectRef = useRef<HTMLSelectElement>(null);
       .eq('match_id', sourceMatchId)
       .eq('status', 'confirmed')
       .order('slot_number', { ascending: true });
-
     if (error) throw error;
-
-    const size = normalizeSquadSize(sourceSquadType);
     if (!bookings?.length) return;
 
-    const { data: existingTeams } = await supabase
+    const size = normalizeSquadSize(sourceSquadType);
+    const { data: existingTeams, error: teamLoadError } = await supabase
       .from('live_broadcast_teams')
       .select('*')
-      .eq('session_id', sessionId);
+      .eq('session_id', sessionId)
+      .order('created_at', { ascending: true });
+    if (teamLoadError) throw teamLoadError;
 
-    const { data: existingPlayers } = await supabase
+    const { data: existingPlayers, error: playerLoadError } = await supabase
       .from('live_broadcast_players')
       .select('*')
-      .eq('session_id', sessionId);
+      .eq('session_id', sessionId)
+      .order('created_at', { ascending: true });
+    if (playerLoadError) throw playerLoadError;
 
-    const teamByKey = new Map<string, any>(
-      (existingTeams || []).map((team: any) => [String(team.team_key).toLowerCase(), team])
-    );
-
-    const grouped = new Map<string, any[]>();
+    const groups = new Map<number, any[]>();
     bookings.forEach((booking: any, index: number) => {
       const identity = getTeamAndPlayerNumber(booking, index, size);
-      const rawName = cleanName(booking.team_name);
-      const teamKey = rawName.toLowerCase() || `team-${identity.teamNumber}`;
-      const list = grouped.get(teamKey) || [];
-      list.push({ booking, identity, teamKey });
-      grouped.set(teamKey, list);
+      const list = groups.get(identity.teamNumber) || [];
+      list.push({ booking, identity });
+      groups.set(identity.teamNumber, list);
     });
 
-    for (const [teamKey, rows] of grouped.entries()) {
-      let team = teamByKey.get(teamKey);
+    for (const [teamNumber, rows] of groups.entries()) {
+      let team = chooseCanonicalTeam(existingTeams || [], teamNumber, teamNumber - 1);
+      const firstBooking = rows[0]?.booking;
+      const canonicalKey = getCanonicalTeamKey(teamNumber);
+      const displayName = cleanName(firstBooking?.team_name) || `TEAM ${teamNumber}`;
 
       if (!team) {
-        const first = rows[0];
         const { data: createdTeam, error: teamError } = await supabase
           .from('live_broadcast_teams')
           .insert({
             session_id: sessionId,
             broadcast_match_id: null,
-            team_key: teamKey,
-            team_name: cleanName(first.booking.team_name) || `TEAM ${first.identity.teamNumber}`,
-            team_logo_url: logoCandidates(first.booking) || null,
+            team_key: canonicalKey,
+            team_name: displayName,
+            team_logo_url: logoCandidates(firstBooking) || null,
             current_match_kills: 0,
             current_match_points: 0,
             current_alive_players: rows.length,
@@ -919,45 +1011,67 @@ const victimSelectRef = useRef<HTMLSelectElement>(null);
           })
           .select('*')
           .single();
-
         if (teamError) throw teamError;
         team = createdTeam;
-        teamByKey.set(teamKey, team);
+        if (Array.isArray(existingTeams)) existingTeams.push(team);
       } else {
-        const aliveCount = rows.reduce((count, row) => {
-          const existing = (existingPlayers || []).find((player: any) =>
-            player.team_id === team.id &&
-            (
-              (row.booking?.player_uid && player.player_uid && sameText(player.player_uid, row.booking.player_uid)) ||
-              (row.booking?.player_id && player.profile_id && String(player.profile_id) === String(row.booking.player_id)) ||
-              sameText(player.player_name, row.booking?.player_ign)
-            )
-          );
-          return count + (existing?.is_alive === false ? 0 : 1);
-        }, 0);
-
-        const normalizedAliveCount = Math.max(0, Math.min(rows.length, aliveCount));
-        if (Number(team.current_alive_players) !== normalizedAliveCount && Number.isFinite(normalizedAliveCount)) {
-          await supabase
+        // Normalize the reusable team identity without changing its live score/state.
+        const patch: Record<string, any> = {};
+        if (cleanName(team.team_key) !== canonicalKey) patch.team_key = canonicalKey;
+        if (!cleanName(team.team_name) && displayName) patch.team_name = displayName;
+        if (Object.keys(patch).length) {
+          patch.updated_at = new Date().toISOString();
+          const { data: updatedTeam, error: updateTeamError } = await supabase
             .from('live_broadcast_teams')
-            .update({ current_alive_players: normalizedAliveCount, updated_at: new Date().toISOString() })
-            .eq('id', team.id);
+            .update(patch)
+            .eq('id', team.id)
+            .select('*')
+            .single();
+          if (updateTeamError) throw updateTeamError;
+          team = updatedTeam || { ...team, ...patch };
+          const teamIndex = (existingTeams || []).findIndex((item: any) => item.id === team.id);
+          if (teamIndex >= 0) (existingTeams as any[])[teamIndex] = team;
         }
       }
 
+      let aliveCount = 0;
       for (const row of rows) {
         const booking = row.booking;
-        const existing = (existingPlayers || []).find((player: any) =>
-          player.team_id === team.id &&
-          (
-            (booking.player_uid && player.player_uid && cleanName(player.player_uid) === cleanName(booking.player_uid)) ||
-            (booking.player_id && player.profile_id && String(player.profile_id) === String(booking.player_id)) ||
-            sameText(player.player_name, booking.player_ign)
-          )
-        );
+        const matchesPlayer = (player: any) => {
+          const uidMatch = Boolean(booking.player_uid && player.player_uid && sameText(player.player_uid, booking.player_uid));
+          const profileMatch = Boolean(
+            (booking.player_id || booking.user_id) &&
+            player.profile_id &&
+            (sameText(player.profile_id, booking.player_id) || sameText(player.profile_id, booking.user_id))
+          );
+          const nameMatch = Boolean(player.player_name && booking.player_ign && sameText(player.player_name, booking.player_ign));
+          return uidMatch || profileMatch || nameMatch;
+        };
 
-        if (!existing) {
-          const { error: playerError } = await supabase
+        const candidates = (existingPlayers || []).filter(matchesPlayer);
+        const canonicalPlayer = candidates.sort((a: any, b: any) => {
+          if (a.team_id === team.id && b.team_id !== team.id) return -1;
+          if (b.team_id === team.id && a.team_id !== team.id) return 1;
+          const aScore = Number(a?.tournament_kills || 0) * 1000 + Number(a?.current_match_kills || 0);
+          const bScore = Number(b?.tournament_kills || 0) * 1000 + Number(b?.current_match_kills || 0);
+          if (aScore !== bScore) return bScore - aScore;
+          return String(a?.created_at || '').localeCompare(String(b?.created_at || ''));
+        })[0];
+
+        if (canonicalPlayer) {
+          if (canonicalPlayer.team_id !== team.id) {
+            const { data: updatedPlayer, error: updatePlayerError } = await supabase
+              .from('live_broadcast_players')
+              .update({ team_id: team.id, updated_at: new Date().toISOString() })
+              .eq('id', canonicalPlayer.id)
+              .select('*')
+              .single();
+            if (updatePlayerError) throw updatePlayerError;
+            Object.assign(canonicalPlayer, updatedPlayer || {});
+          }
+          if (canonicalPlayer.is_alive) aliveCount += 1;
+        } else {
+          const { data: createdPlayer, error: playerError } = await supabase
             .from('live_broadcast_players')
             .insert({
               session_id: sessionId,
@@ -965,15 +1079,27 @@ const victimSelectRef = useRef<HTMLSelectElement>(null);
               team_id: team.id,
               profile_id: booking.player_id || booking.user_id || null,
               player_uid: cleanName(booking.player_uid) || null,
-              player_name: cleanName(booking.player_ign) || cleanName(booking.player_name) || `Player ${row.identity.playerNumber}`,
+              player_name: cleanName(booking.player_ign) || `Player ${row.identity.playerNumber}`,
               current_match_kills: 0,
               is_alive: true,
               is_knocked: false,
               tournament_kills: 0,
-            });
-
+            })
+            .select('*')
+            .single();
           if (playerError) throw playerError;
+          if (Array.isArray(existingPlayers)) existingPlayers.push(createdPlayer);
+          aliveCount += 1;
         }
+      }
+
+      const normalizedAliveCount = Math.max(0, Math.min(rows.length, aliveCount));
+      if (Number(team.current_alive_players) !== normalizedAliveCount) {
+        const { error: aliveError } = await supabase
+          .from('live_broadcast_teams')
+          .update({ current_alive_players: normalizedAliveCount, updated_at: new Date().toISOString() })
+          .eq('id', team.id);
+        if (aliveError) throw aliveError;
       }
     }
   };
@@ -1873,7 +1999,7 @@ const victimSelectRef = useRef<HTMLSelectElement>(null);
                   <optgroup key={`killer-${group.team.id}`} label={`TEAM ${group.teamNumber} • ${group.displayName}`}>
                     {group.players.map((player) => (
                       <option key={player.id} value={player.id}>
-                        {getPlayerOptionLabel(player, group.team)}
+                        {getPlayerOptionLabel(player)}
                       </option>
                     ))}
                   </optgroup>
@@ -1897,7 +2023,7 @@ const victimSelectRef = useRef<HTMLSelectElement>(null);
                   <optgroup key={`victim-${group.team.id}`} label={`TEAM ${group.teamNumber} • ${group.displayName}`}>
                     {group.players.map((player) => (
                       <option key={player.id} value={player.id}>
-                        {getPlayerOptionLabel(player, group)}
+                        {getPlayerOptionLabel(player)}
                       </option>
                     ))}
                   </optgroup>
