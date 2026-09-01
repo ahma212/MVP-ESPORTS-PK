@@ -168,9 +168,7 @@ export async function applyLiveBroadcastEvent(
     if (!params.killerPlayerId || !params.victimPlayerId) {
       throw new Error('A confirmed kill requires both killer and victim players.');
     }
-    if (params.killerPlayerId === params.victimPlayerId) {
-      throw new Error('Killer and victim cannot be the same player.');
-    }
+   
   }
 
   // A knock is explicitly NOT a kill.
