@@ -293,49 +293,99 @@ const victimSelectRef = useRef<HTMLSelectElement>(null);
     return 4;
   }, [currentMatch]);
 
+  const ensureBroadcastMatchRows = async (sessionData: BroadcastSessionRow) => {
+    if (!supabase || !sessionData?.id) return [];
+
+    const { data: existingRows, error: existingError } = await supabase
+      .from('live_broadcast_matches')
+      .select('*')
+      .eq('session_id', sessionData.id)
+      .order('match_number', { ascending: true });
+    if (existingError) throw existingError;
+
+    const existing = (existingRows || []) as BroadcastMatchRow[];
+    const sourceMatches: any[] = sessionData.tournament_id
+      ? (activeTournament?.series || [])
+      : (currentMatch ? [currentMatch] : []);
+    const targetMatches = sourceMatches.length
+      ? sourceMatches.slice(0, Math.max(1, Number(sessionData.total_matches || 1)))
+      : [];
+
+    const rowsToCreate: any[] = [];
+    if (targetMatches.length) {
+      targetMatches.forEach((match: any, index: number) => {
+        const matchNumber = index + 1;
+        if (existing.some((row) => Number(row.match_number) === matchNumber)) return;
+        rowsToCreate.push({
+          session_id: sessionData.id,
+          match_id: String(match.id),
+          match_number: matchNumber,
+          map: getMatchMaps(match)[0] || cleanName(match?.map) || 'Erangel',
+          match_type: getMatchTypeLabel(match),
+          squad_type: getSquadTypeLabel(match),
+          status: matchNumber === Number(sessionData.current_match_number || 1) ? 'live' : 'pending',
+          started_at: matchNumber === Number(sessionData.current_match_number || 1) ? new Date().toISOString() : null,
+          scoring_snapshot: rules,
+        });
+      });
+    } else if (sessionData.current_match_id) {
+      const matchNumber = Math.max(1, Number(sessionData.current_match_number || 1));
+      if (!existing.some((row) => Number(row.match_number) === matchNumber)) {
+        rowsToCreate.push({
+          session_id: sessionData.id,
+          match_id: sourceMatchIdFromBroadcastMatchId(sessionData.current_match_id),
+          match_number: matchNumber,
+          map: sessionData.current_map || 'Erangel',
+          match_type: sessionData.current_match_type || 'MATCH',
+          squad_type: sessionData.current_squad_type || 'SQUAD',
+          status: String(sessionData.status).toLowerCase() === 'completed' ? 'completed' : 'live',
+          started_at: new Date().toISOString(),
+          scoring_snapshot: rules,
+        });
+      }
+    }
+
+    if (rowsToCreate.length) {
+      const { data: created, error: createError } = await supabase
+        .from('live_broadcast_matches')
+        .insert(rowsToCreate)
+        .select('*');
+      if (createError) throw createError;
+      return [...existing, ...((created || []) as BroadcastMatchRow[])].sort((a, b) => Number(a.match_number) - Number(b.match_number));
+    }
+
+    return existing;
+  };
+
   const loadSession = async (sessionId: string) => {
     if (!supabase || !sessionId) return;
+    const sessionResult = await supabase.from('live_broadcast_sessions').select('*').eq('id', sessionId).maybeSingle();
+    const matchResult = await supabase.from('live_broadcast_matches').select('*').eq('session_id', sessionId).order('match_number', { ascending: true });
+    const teamResult = await supabase.from('live_broadcast_teams').select('*').eq('session_id', sessionId).order('rank', { ascending: true, nullsFirst: false });
+    const playerResult = await supabase.from('live_broadcast_players').select('*').eq('session_id', sessionId).order('player_name', { ascending: true });
+    const eventResult = await supabase.from('live_broadcast_events').select('*').eq('session_id', sessionId).order('created_at', { ascending: false }).limit(25);
 
-    const [sessionRes, matchRes, teamRes, playerRes, eventRes] = await Promise.all([
-      supabase.from('live_broadcast_sessions').select('*').eq('id', sessionId).maybeSingle(),
-      supabase.from('live_broadcast_matches').select('*').eq('session_id', sessionId).order('match_number', { ascending: true }),
-      supabase.from('live_broadcast_teams').select('*').eq('session_id', sessionId).order('rank', { ascending: true, nullsFirst: false }),
-      supabase.from('live_broadcast_players').select('*').eq('session_id', sessionId).order('player_name', { ascending: true }),
-      supabase.from('live_broadcast_events').select('*').eq('session_id', sessionId).order('created_at', { ascending: false }).limit(25),
-    ]);
+    if (sessionResult.error) throw sessionResult.error;
+    if (matchResult.error) throw matchResult.error;
+    if (teamResult.error) throw teamResult.error;
+    if (playerResult.error) throw playerResult.error;
+    if (eventResult.error) throw eventResult.error;
+    if (!sessionResult.data) throw new Error('Broadcast session was not found in Supabase.');
 
-    // Do not silently discard database errors. An empty match list can otherwise
-    // make the UI report "No active broadcast match" while the real problem is
-    // an RLS/query/schema error.
-    const firstError = [
-      sessionRes.error,
-      matchRes.error,
-      teamRes.error,
-      playerRes.error,
-      eventRes.error,
-    ].find(Boolean);
-
-    if (firstError) {
-      console.error('[MVP LIVE] loadSession database error:', firstError);
-      show('error', firstError.message || 'Failed to load the broadcast state from Supabase.');
+    const sessionData = sessionResult.data as BroadcastSessionRow;
+    let matchData = (matchResult.data || []) as BroadcastMatchRow[];
+    if (!matchData.length) {
+      matchData = await ensureBroadcastMatchRows(sessionData);
     }
 
-    const sessionData = sessionRes.data;
-    const matchData = matchRes.data || [];
-    const teamData = teamRes.data || [];
-    const playerData = playerRes.data || [];
-    const eventData = eventRes.data || [];
-
-    if (sessionData) {
-      setSession(sessionData as BroadcastSessionRow);
-      setStreamUrl(sessionData.stream_url || '');
-      setVisible({
-        scoreboard: Boolean(sessionData.scoreboard_enabled),
-        top3: Boolean(sessionData.top_three_enabled),
-        bottom: Boolean(sessionData.bottom_bar_enabled),
-      });
-    }
-    const typedMatches = (matchData || []) as BroadcastMatchRow[];
+    setSession(sessionData);
+    setStreamUrl(sessionData.stream_url || '');
+    setVisible({
+      scoreboard: Boolean(sessionData.scoreboard_enabled),
+      top3: Boolean(sessionData.top_three_enabled),
+      bottom: Boolean(sessionData.bottom_bar_enabled),
+    });
+    const typedMatches = matchData;
     const typedPlayers = (playerData || []) as BroadcastPlayerRow[];
 
     // Rebuild Team Number + Player Number from the original slot_bookings roster.
@@ -466,7 +516,9 @@ const victimSelectRef = useRef<HTMLSelectElement>(null);
         .single();
 
       if (error) throw error;
-      setSession(data as BroadcastSessionRow);
+      const resumedSession = data as BroadcastSessionRow;
+      await ensureBroadcastMatchRows(resumedSession);
+      setSession(resumedSession);
       await loadSession(session.id);
       show('success', 'Existing broadcast resumed from the saved state.');
     } catch (error: any) {
@@ -604,6 +656,7 @@ const victimSelectRef = useRef<HTMLSelectElement>(null);
       );
 
       // Repair an older/incomplete roster when an existing broadcast is reopened.
+      await ensureBroadcastMatchRows(existing as BroadcastSessionRow);
       await reconcileLiveBroadcastRoster(
         existing.id,
         sourceMatchId,
@@ -742,10 +795,7 @@ const victimSelectRef = useRef<HTMLSelectElement>(null);
       const rawTeamName = cleanName(booking?.team_name);
       const teamNumber = identity.teamNumber;
       const teamName = rawTeamName || `TEAM ${teamNumber}`;
-      // Team identity is NUMBER + NAME. This prevents two different numbered
-      // teams with the same display name from being merged into one team.
-      const normalizedTeamName = rawTeamName.toLowerCase().replace(/\s+/g, ' ').trim();
-      const teamKey = `team-${teamNumber}-${normalizedTeamName || 'unnamed'}`;
+      const teamKey = rawTeamName.toLowerCase() || `team-${teamNumber}`;
       if (!uniqueTeamMap.has(teamKey)) {
         uniqueTeamMap.set(teamKey, { name: teamName, logo: logoCandidates(booking), teamNumber });
       }
@@ -841,8 +891,7 @@ const victimSelectRef = useRef<HTMLSelectElement>(null);
     bookings.forEach((booking: any, index: number) => {
       const identity = getTeamAndPlayerNumber(booking, index, size);
       const rawName = cleanName(booking.team_name);
-      const normalizedTeamName = rawName.toLowerCase().replace(/\s+/g, ' ').trim();
-      const teamKey = `team-${identity.teamNumber}-${normalizedTeamName || 'unnamed'}`;
+      const teamKey = rawName.toLowerCase() || `team-${identity.teamNumber}`;
       const list = grouped.get(teamKey) || [];
       list.push({ booking, identity, teamKey });
       grouped.set(teamKey, list);
@@ -986,9 +1035,10 @@ const victimSelectRef = useRef<HTMLSelectElement>(null);
         if (ruleError) throw ruleError;
       }
 
-      // Build the match rows + exact confirmed booking roster once.
-      // Do not run reconcile first here because that would create the roster and
-      // then buildSessionTeamsAndPlayers would insert the same players again.
+      // buildSessionTeamsAndPlayers creates the live_broadcast_matches row(s) and
+      // the matching team/player snapshot. Do not reconcile the roster first here,
+      // otherwise a new session can receive duplicate team/player rows before the
+      // live-match records are created. Existing sessions are repaired on load.
       await buildSessionTeamsAndPlayers(data.id, selectedMatches as Match[]);
       setSession(data as BroadcastSessionRow);
       await loadSession(data.id);
@@ -1066,17 +1116,10 @@ const victimSelectRef = useRef<HTMLSelectElement>(null);
 
   const getCurrentBroadcastMatch = () => {
     if (!session) return null;
-
-    // Prefer the exact current match number, then the exact database match_id,
-    // then the first configured broadcast match as a last-resort UI fallback.
-    return (
-      broadcastMatches.find((item) => item.match_number === session.current_match_number) ||
-      (session.current_match_id
-        ? broadcastMatches.find((item) => item.match_id === session.current_match_id)
-        : null) ||
-      broadcastMatches[0] ||
-      null
-    );
+    return broadcastMatches.find((item) =>
+      Number(item.match_number) === Number(session.current_match_number) ||
+      String(item.match_id) === String(session.current_match_id)
+    ) || null;
   };
 
   const currentBroadcastMatch = getCurrentBroadcastMatch();
@@ -1144,44 +1187,8 @@ const victimSelectRef = useRef<HTMLSelectElement>(null);
   const getKillPoints = () => Number(rules.find((rule) => rule.type === 'kill' && rule.enabled)?.points || 0);
 
   const applyKill = async () => {
-  if (!session || !supabase) {
-    show('error', 'No active broadcast session is available.');
-    return;
-  }
-
-  // The React roster can briefly lag behind a freshly-created/restored session.
-  // Resolve the current broadcast match directly from Supabase before failing.
-  let activeBroadcastMatch = currentBroadcastMatch;
-  if (!activeBroadcastMatch) {
-    const byNumber = await supabase
-      .from('live_broadcast_matches')
-      .select('*')
-      .eq('session_id', session.id)
-      .eq('match_number', session.current_match_number)
-      .maybeSingle();
-
-    activeBroadcastMatch = (byNumber.data || null) as BroadcastMatchRow | null;
-
-    if (!activeBroadcastMatch && session.current_match_id) {
-      const byId = await supabase
-        .from('live_broadcast_matches')
-        .select('*')
-        .eq('session_id', session.id)
-        .eq('match_id', session.current_match_id)
-        .maybeSingle();
-      activeBroadcastMatch = (byId.data || null) as BroadcastMatchRow | null;
-    }
-
-    if (activeBroadcastMatch) {
-      setBroadcastMatches((previous) => {
-        const exists = previous.some((item) => item.id === activeBroadcastMatch?.id);
-        return exists ? previous : [...previous, activeBroadcastMatch!].sort((a, b) => a.match_number - b.match_number);
-      });
-    }
-  }
-
-  if (!activeBroadcastMatch) {
-    show('error', 'The current broadcast match record is missing in Supabase. Refresh the broadcast session or check live_broadcast_matches.');
+  if (!session || !currentBroadcastMatch) {
+    show('error', 'No active broadcast match is available.');
     return;
   }
 
@@ -1241,7 +1248,7 @@ const victimSelectRef = useRef<HTMLSelectElement>(null);
   try {
     const result = await applyLiveBroadcastEvent({
       sessionId: session.id,
-      broadcastMatchId: activeBroadcastMatch.id,
+      broadcastMatchId: currentBroadcastMatch.id,
       eventType: 'kill',
       source: 'admin',
 
@@ -1266,7 +1273,7 @@ const victimSelectRef = useRef<HTMLSelectElement>(null);
         same_player: samePlayer,
         same_team: sameTeamKill,
         phase: 'phase3-engine',
-        current_match_id: activeBroadcastMatch.match_id,
+        current_match_id: currentBroadcastMatch.match_id,
       },
     });
 
@@ -1874,7 +1881,7 @@ const victimSelectRef = useRef<HTMLSelectElement>(null);
                 ))}
               </select>
 
-              <button type="button" onClick={applyKill} disabled={liveAction || (!testKillerId && !killerSelectRef.current?.value) || (!testVictimId && !victimSelectRef.current?.value)} className="w-full rounded-xl bg-gradient-to-r from-fuchsia-500 to-cyan-400 px-3 py-3 text-[10px] font-black uppercase tracking-wider text-[#020710] disabled:cursor-not-allowed disabled:opacity-40">
+              <button type="button" onClick={applyKill} disabled={liveAction || !testKillerId || !testVictimId} className="w-full rounded-xl bg-gradient-to-r from-fuchsia-500 to-cyan-400 px-3 py-3 text-[10px] font-black uppercase tracking-wider text-[#020710] disabled:cursor-not-allowed disabled:opacity-40">
                 + CONFIRMED KILL
               </button>
 
