@@ -227,9 +227,13 @@ export const MatchScoreboard: React.FC<MatchScoreboardProps> = ({
                   <span>{matchTime}</span>
                 </span>
               )}
-              <span className="text-gray-400">
-                • {validResults.length} PLAYERS ({squadSize > 1 ? `${sortedTeams.length} TEAMS` : 'SOLO'})
-              </span>
+              {validResults.length > 0 ? (
+  <span className="text-gray-400">
+    • {validResults.length} PLAYERS ({squadSize > 1 ? `${sortedTeams.length} TEAMS` : 'SOLO'})
+  </span>
+) : displayImageUrl ? (
+  <span className="text-gray-400">• RESULT PUBLISHED</span>
+) : null}
             </div>
             <h3 className="text-base sm:text-lg font-black text-white tracking-wide uppercase">
               {matchTitle}
