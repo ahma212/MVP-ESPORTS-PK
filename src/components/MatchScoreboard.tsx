@@ -244,7 +244,7 @@ export const MatchScoreboard: React.FC<MatchScoreboardProps> = ({
                 className="px-2.5 py-1 rounded-lg bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 text-[10px] font-black uppercase flex items-center gap-1 hover:bg-cyan-500/30 transition-all shadow cursor-pointer"
               >
                 <ImageIcon className="w-3.5 h-3.5" />
-                <span>Screenshot</span>
+                <span>View Result</span>
               </button>
             )}
             <span className="text-[10px] text-emerald-400 font-black uppercase bg-emerald-500/15 px-2.5 py-1 rounded-full border border-emerald-500/40">
@@ -316,44 +316,29 @@ export const MatchScoreboard: React.FC<MatchScoreboardProps> = ({
           </div>
         )}
 
-        {/* OFFICIAL RESULT SCREENSHOT CONTAINER (UNCROPPED OBJECT-CONTAIN) */}
+        {/* OFFICIAL RESULT SCREENSHOT — full width card */}
         {displayImageUrl && (
           <div className="pt-2">
-            <div className="rounded-2xl border border-cyan-500/40 bg-[#020710] p-3 space-y-2.5 shadow-xl shadow-cyan-950/20">
-              <div className="flex items-center justify-between px-1">
-                <div className="flex items-center gap-1.5 text-xs font-black text-cyan-300 uppercase tracking-wider">
-                  <ImageIcon className="w-4 h-4 text-cyan-400" />
-                  <span>OFFICIAL MATCH RESULT SCREENSHOT</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setIsViewingImage(true)}
-                  className="px-2.5 py-1 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 text-[10px] font-black uppercase flex items-center gap-1 border border-cyan-500/40 transition-all cursor-pointer shadow"
-                >
-                  <ZoomIn className="w-3.5 h-3.5" />
-                  <span>Full View</span>
-                </button>
+            <div className="rounded-2xl border border-cyan-500/40 bg-[#020710] overflow-hidden shadow-xl shadow-cyan-950/20">
+              <div className="flex items-center gap-1.5 text-xs font-black text-cyan-300 uppercase tracking-wider px-3 pt-3 pb-2">
+                <ImageIcon className="w-4 h-4 text-cyan-400" />
+                <span>OFFICIAL MATCH RESULT</span>
               </div>
 
-              {/* Full Image Display - Guaranteed No Cropping */}
               <div
                 onClick={() => setIsViewingImage(true)}
-                className={`relative rounded-xl bg-black flex items-center justify-center border border-gray-800/80 cursor-pointer overflow-hidden group ${
-                  matchResult.result_image_aspect === '9:16'
-                    ? 'max-w-xs sm:max-w-sm mx-auto max-h-[600px]'
-                    : 'w-full max-h-[420px]'
-                }`}
+                className="relative w-full bg-black cursor-pointer overflow-hidden group"
               >
                 <img
                   src={displayImageUrl}
                   alt={`Official Result - ${matchTitle}`}
-                  className="w-full h-auto max-h-[580px] object-contain transition-transform duration-300 group-hover:scale-[1.01]"
+                  className="w-full h-auto object-contain block"
                   referrerPolicy="no-referrer"
                 />
-                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-colors flex items-center justify-center pointer-events-none">
+                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center pointer-events-none">
                   <span className="opacity-0 group-hover:opacity-100 transition-opacity px-3 py-1.5 rounded-full bg-black/80 text-[#00e5ff] text-xs font-bold border border-[#00e5ff]/50 flex items-center gap-1.5 shadow-xl">
                     <ZoomIn className="w-3.5 h-3.5" />
-                    Click for Full Screen
+                    Tap to enlarge
                   </span>
                 </div>
               </div>
@@ -639,46 +624,39 @@ export const MatchScoreboard: React.FC<MatchScoreboardProps> = ({
         </div>
       )}
 
-      {/* SCREENSHOT LIGHTBOX MODAL */}
+{/* SCREENSHOT LIGHTBOX — full image + scroll + top X close */}
       {isViewingImage && displayImageUrl && (
-        <div
-          className="fixed inset-0 z-[9999] bg-black/95 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 overflow-y-auto"
-          onClick={() => setIsViewingImage(false)}
-        >
-          <div
-            className="relative max-w-5xl w-full max-h-[94vh] flex flex-col items-center justify-center"
-            onClick={(e) => e.stopPropagation()}
-          >
+        <div className="fixed inset-0 z-[9999] bg-black flex flex-col">
+          {/* Sticky top bar with X */}
+          <div className="flex-shrink-0 flex items-center justify-between px-3 py-3 bg-black/90 border-b border-gray-800">
+            <span className="text-xs font-black text-cyan-300 uppercase tracking-wider truncate pr-2">
+              Match Result
+            </span>
             <button
               type="button"
               onClick={() => setIsViewingImage(false)}
-              className="absolute -top-10 right-0 sm:right-2 p-2 rounded-full bg-gray-800 hover:bg-gray-700 text-white shadow-xl cursor-pointer transition-all"
-              title="Close Lightbox"
+              className="p-2.5 rounded-full bg-gray-800 hover:bg-red-600 text-white shadow-xl active:scale-95 transition-all"
+              title="Close"
             >
               <X className="w-5 h-5" />
             </button>
+          </div>
 
+          {/* Scrollable full image area */}
+          <div
+            className="flex-1 overflow-y-auto overflow-x-hidden overscroll-contain"
+            onClick={() => setIsViewingImage(false)}
+          >
             <div
-              className={`w-full overflow-y-auto max-h-[85vh] rounded-2xl border border-cyan-500/40 bg-black flex items-center justify-center p-2 shadow-2xl ${
-                matchResult.result_image_aspect === '9:16' ? 'max-w-md mx-auto' : 'max-w-4xl'
-              }`}
+              className="min-h-full w-full flex justify-center py-2 px-1"
+              onClick={(e) => e.stopPropagation()}
             >
               <img
                 src={displayImageUrl}
                 alt={`Official Match Result - ${matchTitle}`}
-                className="w-auto h-auto max-w-full max-h-[80vh] object-contain rounded-lg select-none"
+                className="w-full max-w-3xl h-auto object-contain select-none"
                 referrerPolicy="no-referrer"
               />
-            </div>
-
-            <div className="flex flex-wrap items-center justify-between w-full max-w-4xl mt-3 px-2 text-xs text-gray-400 gap-2">
-              <span className="font-bold text-white uppercase tracking-wider flex items-center gap-1.5 truncate">
-                <ImageIcon className="w-3.5 h-3.5 text-[#00e5ff] shrink-0" />
-                {matchTitle}
-              </span>
-              <span className="font-mono text-cyan-300 bg-black/60 px-2.5 py-0.5 rounded border border-cyan-500/30 shrink-0">
-                Official Result
-              </span>
             </div>
           </div>
         </div>
@@ -686,4 +664,3 @@ export const MatchScoreboard: React.FC<MatchScoreboardProps> = ({
     </div>
   );
 };
-
