@@ -291,7 +291,7 @@ export const MatchCard: React.FC<MatchCardProps> = ({
     } else {
       // Single map normal card - clean full image, no black blanket
       imageArea = (
-        <div className="relative rounded-xl overflow-hidden border border-[#00e5ff]/30 h-44 sm:h-48 min-h-[11rem] w-full my-2.5 shadow-[0_0_18px_rgba(0,229,255,0.12)]">
+        <div className="relative rounded-xl overflow-hidden border border-[#00e5ff]/30 h-52 sm:h-60 min-h-[13.5rem] w-full my-2.5 shadow-[0_0_18px_rgba(0,229,255,0.12)]">
           <img 
             src={match.banner_url || getMapImage(match.map)} 
             alt={`${match.map} Map`} 
