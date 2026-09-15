@@ -112,7 +112,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
   const formatMmSs = (totalSeconds: number) => {
     const mins = Math.floor(totalSeconds / 60);
     const secs = totalSeconds % 60;
-    return `\( {mins.toString().padStart(2, '0')}: \){secs.toString().padStart(2, '0')}`;
+    return mins.toString().padStart(2, '0') + ':' + secs.toString().padStart(2, '0');
   };
   const isLocked = lockUntil !== null && remainingLockTime > 0;
 
@@ -486,7 +486,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
               {authMode === 'signup'
                 ? 'Enter your esports email and password to register'
                 : 'Enter your esports email and password'}
-            </p>
+            </p>qq
           </div>
 
           {displayError && (
