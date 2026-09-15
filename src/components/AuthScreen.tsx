@@ -482,7 +482,11 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
             <h2 className="text-2xl font-black text-[#00e5ff] tracking-wide">
               {authMode === 'signup' ? 'CREATE ACCOUNT' : 'WELCOME BACK'}
             </h2>
-            <p className="text-xs text-gray-400 font-medium">Enter your esports credentials</p>
+            <p className="text-xs text-gray-400 font-medium">
+              {authMode === 'signup'
+                ? 'Enter your esports email and password to register'
+                : 'Enter your esports email and password'}
+            </p>
           </div>
 
           {displayError && (
