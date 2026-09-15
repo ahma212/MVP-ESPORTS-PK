@@ -484,7 +484,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
             </h2>
             <p className="text-xs text-gray-400 font-medium">
               {authMode === 'signup'
-                ? 'Enter your esports email and password to register'
+                ? 'Fill in your information to create an account'
                 : 'Enter your esports email and password'}
             </p>
           </div>
