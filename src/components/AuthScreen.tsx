@@ -486,7 +486,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
               {authMode === 'signup'
                 ? 'Enter your esports email and password to register'
                 : 'Enter your esports email and password'}
-            </p>qq
+            </p>
           </div>
 
           {displayError && (
